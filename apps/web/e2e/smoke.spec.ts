@@ -76,3 +76,15 @@ test("layout fits the viewport without horizontal scrolling", async ({ page }) =
     expect(overflow, `horizontal overflow on ${path}`).toBeLessThanOrEqual(0);
   }
 });
+
+test("pages link an icon that loads", async ({ page, request }) => {
+  await stubHealth(page, 200, { status: "ok", database: "up", timestamp });
+
+  for (const path of ["/", "/admin/"]) {
+    await page.goto(path);
+    const href = await page.locator('link[rel="icon"]').first().getAttribute("href");
+    expect(href, `icon link on ${path}`).toBeTruthy();
+    const response = await request.get(new URL(href ?? "", page.url()).toString());
+    expect(response.status(), `icon ${href}`).toBe(200);
+  }
+});
