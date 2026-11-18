@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// Paths are relative ("./", "admin/") so they resolve against baseURL, which
+// includes the base path when the suite runs against the GitHub Pages build.
 // The smoke test does not need a running API: calls to /health are stubbed so
 // the test checks that the web app calls the API and renders what it returns.
 async function stubHealth(page: Page, status: number, body: unknown) {
@@ -18,7 +20,7 @@ const timestamp = "2026-11-18T10:00:00.000Z";
 test("member home loads and shows a healthy API", async ({ page }) => {
   await stubHealth(page, 200, { status: "ok", database: "up", timestamp });
 
-  await page.goto("/");
+  await page.goto("./");
 
   await expect(page.getByRole("heading", { level: 1, name: "Welcome" })).toBeVisible();
   await expect(page.getByTestId("api-status-api")).toHaveText("Online");
@@ -28,7 +30,7 @@ test("member home loads and shows a healthy API", async ({ page }) => {
 test("staff back office placeholder loads at /admin", async ({ page }) => {
   await stubHealth(page, 200, { status: "ok", database: "up", timestamp });
 
-  await page.goto("/admin");
+  await page.goto("admin");
 
   await expect(page.getByRole("heading", { level: 1, name: "Back office" })).toBeVisible();
   await expect(page.getByTestId("api-status-api")).toHaveText("Online");
@@ -37,7 +39,7 @@ test("staff back office placeholder loads at /admin", async ({ page }) => {
 test("shows the database as down when the API reports it", async ({ page }) => {
   await stubHealth(page, 503, { status: "degraded", database: "down", timestamp });
 
-  await page.goto("/");
+  await page.goto("./");
 
   await expect(page.getByTestId("api-status-api")).toHaveText("Online");
   await expect(page.getByTestId("api-status-database")).toHaveText("Down");
@@ -46,7 +48,7 @@ test("shows the database as down when the API reports it", async ({ page }) => {
 test("shows the API as unreachable when the request fails", async ({ page }) => {
   await page.route("**/health", (route) => route.abort("connectionrefused"));
 
-  await page.goto("/");
+  await page.goto("./");
 
   await expect(page.getByTestId("api-status-api")).toHaveText("API unreachable");
 });
@@ -55,7 +57,7 @@ test("gives up on an API that never answers", async ({ page }) => {
   // Accept the request but never respond (like a wrong LAN address that hangs).
   await page.route("**/health", () => {});
 
-  await page.goto("/");
+  await page.goto("./");
 
   await expect(page.getByTestId("api-status-api")).toHaveText("Checking…");
   await expect(page.getByTestId("api-status-api")).toHaveText(
@@ -68,7 +70,7 @@ test("gives up on an API that never answers", async ({ page }) => {
 test("layout fits the viewport without horizontal scrolling", async ({ page }) => {
   await stubHealth(page, 200, { status: "ok", database: "up", timestamp });
 
-  for (const path of ["/", "/admin"]) {
+  for (const path of ["./", "admin"]) {
     await page.goto(path);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -80,7 +82,7 @@ test("layout fits the viewport without horizontal scrolling", async ({ page }) =
 test("pages link an icon that loads", async ({ page, request }) => {
   await stubHealth(page, 200, { status: "ok", database: "up", timestamp });
 
-  for (const path of ["/", "/admin/"]) {
+  for (const path of ["./", "admin/"]) {
     await page.goto(path);
     const href = await page.locator('link[rel="icon"]').first().getAttribute("href");
     expect(href, `icon link on ${path}`).toBeTruthy();

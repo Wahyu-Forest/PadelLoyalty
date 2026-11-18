@@ -5,7 +5,7 @@ import { resolveApiUrl } from "../src/lib/config";
 // `/health`. This checks the app calls the API at the configured base URL.
 const timestamp = "2026-11-18T10:00:00.000Z";
 
-for (const path of ["/", "/admin/"]) {
+for (const path of ["./", "admin/"]) {
   test(`${path} calls GET {NEXT_PUBLIC_API_URL}/health`, async ({ page, baseURL }) => {
     const requested: string[] = [];
     await page.route("**/health", (route) => {
