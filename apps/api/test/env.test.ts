@@ -25,7 +25,8 @@ describe("loadEnv", () => {
   });
 
   it("fails clearly when DATABASE_URL is missing", () => {
-    expect(() => loadEnv({})).toThrow(/DATABASE_URL/);
+    expect(() => loadEnv({})).toThrow(/DATABASE_URL is required/);
+    expect(() => loadEnv({ DATABASE_URL: "" })).toThrow(/DATABASE_URL is required/);
   });
 
   it("rejects an invalid PORT", () => {

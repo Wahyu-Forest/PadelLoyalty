@@ -5,6 +5,7 @@
     "build": {
       "dependsOn": ["^build"],
       "env": ["NEXT_PUBLIC_*"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["dist/**", "out/**", ".next/**", "!.next/cache/**"]
     },
     "lint": {
@@ -16,11 +17,13 @@
     "test": {
       "dependsOn": ["^build"],
       "env": ["DATABASE_URL", "TEST_DATABASE_URL"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": []
     },
     "test:e2e": {
       "dependsOn": ["build"],
-      "env": ["CI", "E2E_PORT", "E2E_BROWSER_CHANNEL"],
+      "env": ["CI", "E2E_PORT", "E2E_BROWSER_CHANNEL", "NEXT_PUBLIC_*"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["playwright-report/**", "test-results/**"]
     },
     "dev": {

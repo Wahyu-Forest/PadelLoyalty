@@ -69,6 +69,13 @@ jobs:
       - name: Playwright smoke test
         run: pnpm test:e2e
 
+      # Same suite against the GitHub Pages build, served under /PadelLoyalty/
+      # by apps/web/e2e/serve-static.mjs.
+      - name: Playwright smoke test under the GitHub Pages base path
+        run: pnpm test:e2e
+        env:
+          NEXT_PUBLIC_BASE_PATH: /PadelLoyalty
+
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v5

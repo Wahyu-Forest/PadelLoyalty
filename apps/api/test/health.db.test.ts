@@ -1,6 +1,7 @@
 /**
  * Integration test: /health against a real PostgreSQL.
- * Uses TEST_DATABASE_URL (falls back to the docker compose test database).
+ * Uses TEST_DATABASE_URL from the shell or apps/api/.env. There is no fallback:
+ * the test runs migrations, so it only uses a database the developer named.
  */
 import { healthResponseSchema } from "@padelloyalty/shared";
 import { sql } from "drizzle-orm";
@@ -8,19 +9,18 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { createDatabase, isDatabaseReachable, type DatabaseConnection } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrations.js";
-
-const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL ?? "postgres://padel:padel@localhost:5432/padelloyalty_test";
+import { maskPassword, requireTestDatabaseUrl } from "./support/test-env.js";
 
 let connection: DatabaseConnection;
 
 beforeAll(async () => {
+  const TEST_DATABASE_URL = requireTestDatabaseUrl();
   connection = createDatabase(TEST_DATABASE_URL);
   if (!(await isDatabaseReachable(connection.db, 5_000))) {
     await connection.pool.end();
     throw new Error(
-      `Cannot reach the test database at ${TEST_DATABASE_URL.replace(/:[^:@/]*@/, ":***@")}. ` +
-        "Start Postgres (`docker compose up -d`) or set TEST_DATABASE_URL.",
+      `Cannot reach the test database at ${maskPassword(TEST_DATABASE_URL)}. ` +
+        "Start Postgres (`docker compose up -d`) or fix TEST_DATABASE_URL.",
     );
   }
   await runMigrations(connection.db);

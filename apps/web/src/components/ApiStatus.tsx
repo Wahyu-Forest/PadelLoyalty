@@ -43,7 +43,7 @@ export function ApiStatus() {
         <dt>Database</dt>
         <dd data-testid="api-status-database">{database}</dd>
       </dl>
-      <p className="muted">{apiUrl}</p>
+      <p className="muted">{apiUrl ?? "No API configured for this build"}</p>
     </section>
   );
 }

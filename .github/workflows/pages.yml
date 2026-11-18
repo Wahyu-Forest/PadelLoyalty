@@ -1,0 +1,88 @@
+name: Deploy web app to GitHub Pages
+
+# Publishes the static export of apps/web to
+# https://wahyu-forest.github.io/PadelLoyalty/ (a project site, so it lives
+# under /PadelLoyalty/). Requires Settings → Pages → Source: "GitHub Actions".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # configure-pages reads the repo's Pages settings in the build job.
+  pages: read
+
+# One deployment at a time. A newer push queues behind the running one rather
+# than cancelling a deployment halfway through.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build static export
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      TURBO_TELEMETRY_DISABLED: 1
+      # Only this build is served under a subpath; the Capacitor build stays at the root.
+      NEXT_PUBLIC_BASE_PATH: /PadelLoyalty
+      # Repository variable (Settings → Secrets and variables → Actions → Variables).
+      # Empty or unset: the site makes no API calls and shows "API unreachable".
+      NEXT_PUBLIC_API_URL: ${{ vars.PAGES_API_URL }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Build web app
+        run: pnpm turbo run build --filter=@padelloyalty/web
+
+      - name: Prepare and check the export
+        working-directory: apps/web/out
+        run: |
+          # Serve files as-is (no Jekyll), including the _next/ folder.
+          touch .nojekyll
+          test -f index.html
+          test -f admin/index.html
+          test -f 404.html
+          # Assets must be requested from under the base path.
+          grep -q "src=\"${NEXT_PUBLIC_BASE_PATH}/_next/" index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: apps/web/out
+          # Keep .nojekyll (dotfiles are left out by default).
+          include-hidden-files: true
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5
