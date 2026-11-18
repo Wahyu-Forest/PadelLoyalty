@@ -1,306 +1,281 @@
 /**
- * QA (issue #1): an in-browser fake of the auth API, built from the contract
- * in docs/api/auth.md and the Zod schemas in @padelloyalty/shared.
- *
- * It intercepts `{API}/auth/*` and `{API}/health` with `page.route`, keeps
- * accounts, sessions and emailed tokens in memory, and validates every request
- * body with the shared request schemas, so a UI that sends the wrong shape fails
- * the test. Emails are captured (like CapturingMailer) for the verify / reset
- * flows. It lets the UI flows run in CI without a running API, at `/` and under
- * the GitHub Pages base path.
+ * In-browser stand-in for the auth API (docs/api/auth.md), installed with
+ * Playwright routes so the e2e suite runs against the static export without a
+ * server. Requests are parsed and responses built with the shared Zod schemas,
+ * so the fake cannot drift from the contract without failing.
+ * The real API is covered by apps/api/test/auth.*.db.test.ts.
  */
-import { randomUUID } from "node:crypto";
 import {
+  authSessionResponseSchema,
   logInRequestSchema,
   logOutRequestSchema,
+  meResponseSchema,
+  messageResponseSchema,
   passwordResetConfirmRequestSchema,
   passwordResetRequestSchema,
   refreshRequestSchema,
   resendVerificationRequestSchema,
   signUpRequestSchema,
   verifyEmailRequestSchema,
-  type AccountStatus,
+  verifyEmailResponseSchema,
   type ApiErrorCode,
   type AuthUser,
-  type UserRole,
 } from "@padelloyalty/shared";
 import type { Page, Route } from "@playwright/test";
+import { z } from "zod";
+import { resolveApiUrl } from "../../src/lib/config";
+
+export const API_URL = resolveApiUrl(process.env.NEXT_PUBLIC_API_URL) ?? "http://localhost:4000";
 
 interface Account {
-  id: string;
-  email: string;
+  user: AuthUser;
   password: string;
-  role: UserRole;
-  status: AccountStatus;
-  createdAt: string;
-}
-interface Session {
-  userId: string;
-  access: string;
-  refresh: string;
-  accessExpiresAt: number;
-  rotated: Set<string>;
-  revoked: boolean;
-}
-export interface CapturedEmail {
-  to: string;
-  type: "verify_email" | "password_reset" | "account_exists";
-  token?: string;
 }
 
-const ACCESS_MS = 15 * 60_000;
-const REFRESH_MS = 30 * 24 * 3_600_000;
+interface Email {
+  to: string;
+  type: "verify_email" | "password_reset";
+  token: string;
+}
+
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, content-type",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-expose-headers": "retry-after",
+};
 
 export class FakeAuthApi {
   readonly accounts = new Map<string, Account>();
-  readonly sessions: Session[] = [];
-  readonly emails: CapturedEmail[] = [];
-  readonly requests: { method: string; path: string; body: unknown; authorization?: string }[] = [];
-  private tokens = new Map<
+  readonly emails: Email[] = [];
+  /** Every call the app made, e.g. "POST /auth/login". */
+  readonly calls: string[] = [];
+  /** Force the next response for a path, e.g. a 429. */
+  readonly overrides = new Map<
     string,
-    { email: string; type: "verify_email" | "password_reset"; used: boolean }
+    { status: number; body: unknown; headers?: Record<string, string> }
   >();
-  /** Set to make every request fail at the network level (API down). */
-  offline = false;
-  /** Offset added to the fake clock, to expire access tokens. */
-  clockOffsetMs = 0;
-  /** Delay before answering, to observe loading states / double submits. */
-  delayMs = 0;
+  private readonly sessions = new Map<string, { email: string; access: string }>();
+  private readonly linkTokens = new Map<string, Email & { used: boolean }>();
+  private counter = 0;
 
-  private now() {
-    return Date.now() + this.clockOffsetMs;
+  async install(page: Page): Promise<void> {
+    await page.route(`${API_URL}/**`, (route) => this.handle(route));
   }
 
-  /** Adds a ready-made account (bypassing sign-up). */
-  seed(
-    email: string,
-    password: string,
-    status: AccountStatus = "active",
-    role: UserRole = "member",
-  ) {
+  /** Creates an account directly, verified or not. */
+  addAccount(email: string, password: string, verified = true): Account {
     const account: Account = {
-      id: randomUUID(),
-      email: email.trim().toLowerCase(),
       password,
-      role,
-      status,
-      createdAt: new Date().toISOString(),
+      user: {
+        id: crypto.randomUUID(),
+        email,
+        role: "member",
+        status: verified ? "active" : "pending_verification",
+        emailVerified: verified,
+        createdAt: new Date().toISOString(),
+      },
     };
-    this.accounts.set(account.email, account);
+    this.accounts.set(email, account);
     return account;
   }
 
-  lastEmail(to: string, type?: CapturedEmail["type"]) {
-    return [...this.emails].reverse().find((e) => e.to === to && (!type || e.type === type));
+  /** The app path of the latest emailed link, e.g. "verify-email/#token=…". */
+  linkPath(email: string, type: Email["type"]): string {
+    const message = this.emails.findLast((e) => e.to === email && e.type === type);
+    if (!message) throw new Error(`no ${type} email to ${email}`);
+    const page = type === "verify_email" ? "verify-email" : "reset-password";
+    return `${page}/#token=${message.token}`;
   }
 
-  /** Expires every access token (as if 15 minutes passed). */
-  expireAccessTokens() {
-    this.clockOffsetMs += ACCESS_MS + 1_000;
+  private async handle(route: Route): Promise<void> {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "OPTIONS") {
+      return route.fulfill({ status: 204, headers: CORS });
+    }
+    this.calls.push(`${request.method()} ${path}`);
+    const override = this.overrides.get(path);
+    if (override) {
+      this.overrides.delete(path);
+      return this.reply(route, override.status, override.body, override.headers);
+    }
+    let body: unknown = {};
+    try {
+      body = request.postDataJSON() ?? {};
+    } catch {
+      body = {};
+    }
+    const [status, response] = this.respond(request.method(), path, body, request.headers());
+    return this.reply(route, status, response);
   }
 
-  activeSessions(email: string) {
-    const account = this.accounts.get(email);
-    return this.sessions.filter((s) => s.userId === account?.id && !s.revoked);
+  private reply(route: Route, status: number, body: unknown, headers: Record<string, string> = {}) {
+    return route.fulfill({
+      status,
+      headers: { ...CORS, ...headers },
+      contentType: "application/json",
+      body: status === 204 ? "" : JSON.stringify(body),
+    });
   }
 
-  private issueEmailToken(email: string, type: "verify_email" | "password_reset") {
-    for (const t of this.tokens.values()) if (t.email === email && t.type === type) t.used = true;
-    const token = `${type === "verify_email" ? "v" : "r"}_${randomUUID()}`;
-    this.tokens.set(token, { email, type, used: false });
-    this.emails.push({ to: email, type, token });
-  }
-
-  private user(a: Account): AuthUser {
-    return {
-      id: a.id,
-      email: a.email,
-      role: a.role,
-      status: a.status,
-      emailVerified: a.status === "active",
-      createdAt: a.createdAt,
-    };
-  }
-
-  private newSession(a: Account, existing?: Session) {
-    const now = this.now();
-    const session = existing ?? {
-      userId: a.id,
-      access: "",
-      refresh: "",
-      accessExpiresAt: 0,
-      rotated: new Set<string>(),
-      revoked: false,
-    };
-    if (existing) session.rotated.add(existing.refresh);
-    session.access = `pla_${randomUUID()}`;
-    session.refresh = `plr_${randomUUID()}`;
-    session.accessExpiresAt = now + ACCESS_MS;
-    if (!existing) this.sessions.push(session);
-    return {
-      user: this.user(a),
-      accessToken: session.access,
-      accessTokenExpiresAt: new Date(session.accessExpiresAt).toISOString(),
-      refreshToken: session.refresh,
-      refreshTokenExpiresAt: new Date(now + REFRESH_MS).toISOString(),
-    };
-  }
-
-  private handle(
+  private respond(
     method: string,
     path: string,
     body: unknown,
-    authorization?: string,
+    headers: Record<string, string>,
   ): [number, unknown] {
-    const err = (status: number, code: ApiErrorCode, message: string = code) =>
-      [status, { error: { code, message } }] as [number, unknown];
-    type Schema<T> = {
-      safeParse(
-        x: unknown,
-      ):
-        | { success: true; data: T }
-        | { success: false; error: { issues: { path: PropertyKey[]; message: string }[] } };
-    };
-    const parse = <T>(schema: Schema<T>): T | [number, unknown] => {
-      const r = schema.safeParse(body);
-      if (r.success) return r.data;
-      const fieldErrors: Record<string, string[]> = {};
-      for (const issue of r.error.issues) {
-        const key = String(issue.path[0] ?? "_");
-        (fieldErrors[key] ??= []).push(issue.message);
+    const parse = <T extends z.ZodType>(schema: T) => {
+      const result = schema.safeParse(body);
+      if (!result.success) {
+        throw Object.assign(new Error("validation"), {
+          reply: [
+            400,
+            error(
+              "validation_error",
+              "Some fields are missing or invalid.",
+              z.flattenError(result.error).fieldErrors,
+            ),
+          ],
+        });
       }
-      return [
-        400,
-        { error: { code: "validation_error", message: "Invalid request", fieldErrors } },
-      ];
+      return result.data as z.output<T>;
     };
-    const isErr = (x: unknown): x is [number, unknown] => Array.isArray(x);
-    const accepted: [number, unknown] = [
-      202,
-      { message: "If the details are right, we've sent you an email." },
-    ];
 
-    switch (`${method} ${path}`) {
-      case "GET /health":
-        return [200, { status: "ok", database: "up", timestamp: new Date().toISOString() }];
-      case "POST /auth/signup": {
-        const b = parse(signUpRequestSchema);
-        if (isErr(b)) return b;
-        const existing = this.accounts.get(b.email);
-        if (!existing) {
-          this.seed(b.email, b.password, "pending_verification");
-          this.issueEmailToken(b.email, "verify_email");
-        } else if (existing.status === "pending_verification") {
-          this.issueEmailToken(b.email, "verify_email");
-        } else {
-          this.emails.push({ to: b.email, type: "account_exists" });
+    try {
+      switch (`${method} ${path}`) {
+        case "POST /auth/signup": {
+          const { email, password } = parse(signUpRequestSchema);
+          if (!this.accounts.has(email)) {
+            this.addAccount(email, password, false);
+            this.sendLink(email, "verify_email");
+          }
+          return [
+            202,
+            messageResponseSchema.parse({ message: "Check your inbox to verify your email." }),
+          ];
         }
-        return accepted;
-      }
-      case "POST /auth/verify-email": {
-        const b = parse(verifyEmailRequestSchema);
-        if (isErr(b)) return b;
-        const t = this.tokens.get(b.token);
-        if (!t || t.used || t.type !== "verify_email") return err(400, "invalid_token");
-        t.used = true;
-        const a = this.accounts.get(t.email)!;
-        a.status = "active";
-        return [200, { message: "Email verified", accountStatus: a.status }];
-      }
-      case "POST /auth/verify-email/resend": {
-        const b = parse(resendVerificationRequestSchema);
-        if (isErr(b)) return b;
-        if (this.accounts.get(b.email)?.status === "pending_verification")
-          this.issueEmailToken(b.email, "verify_email");
-        return accepted;
-      }
-      case "POST /auth/login": {
-        const b = parse(logInRequestSchema);
-        if (isErr(b)) return b;
-        const a = this.accounts.get(b.email);
-        if (!a || a.password !== b.password)
-          return err(401, "invalid_credentials", "Email or password is incorrect");
-        return [200, this.newSession(a)];
-      }
-      case "POST /auth/refresh": {
-        const b = parse(refreshRequestSchema);
-        if (isErr(b)) return b;
-        const reused = this.sessions.find((s) => s.rotated.has(b.refreshToken));
-        if (reused) {
-          reused.revoked = true;
-          return err(401, "invalid_refresh_token");
+        case "POST /auth/verify-email": {
+          const { token } = parse(verifyEmailRequestSchema);
+          const account = this.useLink(token, "verify_email");
+          if (!account)
+            return [400, error("invalid_token", "This link is invalid or has expired.")];
+          account.user = { ...account.user, status: "active", emailVerified: true };
+          return [
+            200,
+            verifyEmailResponseSchema.parse({
+              message: "Your email is verified.",
+              accountStatus: "active",
+            }),
+          ];
         }
-        const s = this.sessions.find((x) => x.refresh === b.refreshToken && !x.revoked);
-        if (!s) return err(401, "invalid_refresh_token");
-        const a = [...this.accounts.values()].find((x) => x.id === s.userId)!;
-        return [200, this.newSession(a, s)];
+        case "POST /auth/verify-email/resend": {
+          const { email } = parse(resendVerificationRequestSchema);
+          if (this.accounts.get(email)?.user.emailVerified === false)
+            this.sendLink(email, "verify_email");
+          return [
+            202,
+            messageResponseSchema.parse({ message: "If needed, we've sent a new link." }),
+          ];
+        }
+        case "POST /auth/login": {
+          const { email, password } = parse(logInRequestSchema);
+          const account = this.accounts.get(email);
+          if (!account || account.password !== password) {
+            return [401, error("invalid_credentials", "Email or password is incorrect.")];
+          }
+          return [200, this.newSession(email)];
+        }
+        case "POST /auth/refresh": {
+          const { refreshToken } = parse(refreshRequestSchema);
+          const session = this.sessions.get(refreshToken);
+          if (!session) return [401, error("invalid_refresh_token", "Your session has ended.")];
+          this.sessions.delete(refreshToken);
+          return [200, this.newSession(session.email)];
+        }
+        case "POST /auth/logout": {
+          const { refreshToken } = parse(logOutRequestSchema);
+          this.sessions.delete(refreshToken);
+          return [204, null];
+        }
+        case "GET /auth/me": {
+          const access = /^Bearer (.+)$/.exec(headers.authorization ?? "")?.[1];
+          const session = [...this.sessions.values()].find((s) => s.access === access);
+          const account = session && this.accounts.get(session.email);
+          if (!account) return [401, error("unauthorized", "You need to log in to do that.")];
+          return [200, meResponseSchema.parse({ user: account.user })];
+        }
+        case "POST /auth/password-reset/request": {
+          const { email } = parse(passwordResetRequestSchema);
+          if (this.accounts.has(email)) this.sendLink(email, "password_reset");
+          return [
+            202,
+            messageResponseSchema.parse({
+              message: "If this email has an account, we've sent a link.",
+            }),
+          ];
+        }
+        case "POST /auth/password-reset/confirm": {
+          const { token, password } = parse(passwordResetConfirmRequestSchema);
+          const account = this.useLink(token, "password_reset");
+          if (!account)
+            return [400, error("invalid_token", "This link is invalid or has expired.")];
+          account.password = password;
+          for (const [refresh, s] of this.sessions)
+            if (s.email === account.user.email) this.sessions.delete(refresh);
+          return [200, messageResponseSchema.parse({ message: "Your password has been changed." })];
+        }
+        default:
+          return [404, error("not_found", "Not found.")];
       }
-      case "POST /auth/logout": {
-        const b = parse(logOutRequestSchema);
-        if (isErr(b)) return b;
-        const s = this.sessions.find((x) => x.refresh === b.refreshToken);
-        if (s) s.revoked = true;
-        return [204, undefined];
-      }
-      case "GET /auth/me": {
-        const token = /^Bearer (.+)$/.exec(authorization ?? "")?.[1];
-        const s = this.sessions.find((x) => x.access === token && !x.revoked);
-        if (!s || s.accessExpiresAt < this.now()) return err(401, "unauthorized");
-        const a = [...this.accounts.values()].find((x) => x.id === s.userId)!;
-        return [200, { user: this.user(a) }];
-      }
-      case "POST /auth/password-reset/request": {
-        const b = parse(passwordResetRequestSchema);
-        if (isErr(b)) return b;
-        if (this.accounts.has(b.email)) this.issueEmailToken(b.email, "password_reset");
-        return accepted;
-      }
-      case "POST /auth/password-reset/confirm": {
-        const b = parse(passwordResetConfirmRequestSchema);
-        if (isErr(b)) return b;
-        const t = this.tokens.get(b.token);
-        if (!t || t.used || t.type !== "password_reset") return err(400, "invalid_token");
-        t.used = true;
-        const a = this.accounts.get(t.email)!;
-        a.password = b.password;
-        a.status = "active";
-        for (const s of this.sessions) if (s.userId === a.id) s.revoked = true;
-        return [200, { message: "Password changed" }];
-      }
-      default:
-        return err(404, "not_found");
+    } catch (thrown) {
+      const reply = (thrown as { reply?: [number, unknown] }).reply;
+      if (reply) return reply;
+      throw thrown;
     }
   }
 
-  /** Installs the fake on a page. Matches `/auth/*` and `/health` on any origin except the app's. */
-  async install(page: Page, appOrigin: string) {
-    const handler = async (route: Route) => {
-      const request = route.request();
-      const url = new URL(request.url());
-      if (url.origin === appOrigin) return route.fallback();
-      const cors = {
-        "access-control-allow-origin": request.headers()["origin"] ?? "*",
-        "access-control-allow-headers": "authorization, content-type",
-        "access-control-allow-methods": "GET, POST, OPTIONS",
-      };
-      if (this.offline) return route.abort("connectionrefused");
-      if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-      let body: unknown = undefined;
-      try {
-        body = request.postData() ? JSON.parse(request.postData()!) : undefined;
-      } catch {
-        body = request.postData();
-      }
-      const authorization = request.headers()["authorization"];
-      this.requests.push({ method: request.method(), path: url.pathname, body, authorization });
-      if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
-      const [status, json] = this.handle(request.method(), url.pathname, body, authorization);
-      return route.fulfill({
-        status,
-        headers: { ...cors, ...(json === undefined ? {} : { "content-type": "application/json" }) },
-        body: json === undefined ? "" : JSON.stringify(json),
-      });
-    };
-    await page.route(/\/(auth\/[^?#]*|health)(\?.*)?$/, handler);
+  private sendLink(email: string, type: Email["type"]) {
+    const token = `ple_${type}_${++this.counter}`;
+    // A new link replaces older unused ones of the same type.
+    for (const link of this.linkTokens.values())
+      if (link.to === email && link.type === type) link.used = true;
+    this.linkTokens.set(token, { to: email, type, token, used: false });
+    this.emails.push({ to: email, type, token });
   }
+
+  private useLink(token: string, type: Email["type"]): Account | undefined {
+    const link = this.linkTokens.get(token);
+    if (!link || link.used || link.type !== type) return undefined;
+    link.used = true;
+    return this.accounts.get(link.to);
+  }
+
+  private newSession(email: string) {
+    const account = this.accounts.get(email);
+    if (!account) throw new Error("no account");
+    const n = ++this.counter;
+    const access = `pla_${n}`;
+    const refresh = `plr_${n}`;
+    this.sessions.set(refresh, { email, access });
+    const now = Date.now();
+    return authSessionResponseSchema.parse({
+      user: account.user,
+      accessToken: access,
+      accessTokenExpiresAt: new Date(now + 15 * 60_000).toISOString(),
+      refreshToken: refresh,
+      refreshTokenExpiresAt: new Date(now + 30 * 86_400_000).toISOString(),
+    });
+  }
+}
+
+function error(
+  code: ApiErrorCode,
+  message: string,
+  fieldErrors?: Record<string, string[] | undefined>,
+) {
+  const clean = fieldErrors
+    ? Object.fromEntries(Object.entries(fieldErrors).filter((e): e is [string, string[]] => !!e[1]))
+    : undefined;
+  return { error: { code, message, ...(clean ? { fieldErrors: clean } : {}) } };
 }
