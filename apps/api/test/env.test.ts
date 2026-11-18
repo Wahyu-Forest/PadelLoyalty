@@ -10,6 +10,8 @@ describe("loadEnv", () => {
       HOST: "0.0.0.0",
       PORT: 4000,
       CORS_ORIGINS: DEFAULT_CORS_ORIGINS,
+      APP_URL: "http://localhost:3000",
+      TRUST_PROXY: false,
       LOG_LEVEL: "info",
     });
   });
@@ -31,5 +33,17 @@ describe("loadEnv", () => {
 
   it("rejects an invalid PORT", () => {
     expect(() => loadEnv({ DATABASE_URL, PORT: "not-a-port" })).toThrow(/PORT/);
+  });
+
+  it("normalises APP_URL and parses TRUST_PROXY", () => {
+    const env = loadEnv({
+      DATABASE_URL,
+      APP_URL: "https://wahyu-forest.github.io/PadelLoyalty/",
+      TRUST_PROXY: "true",
+    });
+    expect(env.APP_URL).toBe("https://wahyu-forest.github.io/PadelLoyalty");
+    expect(env.TRUST_PROXY).toBe(true);
+    expect(() => loadEnv({ DATABASE_URL, APP_URL: "not a url" })).toThrow(/APP_URL/);
+    expect(() => loadEnv({ DATABASE_URL, TRUST_PROXY: "yes" })).toThrow(/TRUST_PROXY/);
   });
 });

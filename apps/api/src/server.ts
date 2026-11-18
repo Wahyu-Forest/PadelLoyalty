@@ -1,5 +1,6 @@
 import { buildApp } from "./app.js";
 import { createDatabase, isDatabaseReachable } from "./db/client.js";
+import { ConsoleMailer } from "./email/mailer.js";
 import { loadEnv } from "./env.js";
 
 const env = loadEnv();
@@ -9,6 +10,13 @@ const app = await buildApp({
   checkDatabase: () => isDatabaseReachable(db),
   corsOrigins: env.CORS_ORIGINS,
   logger: { level: env.LOG_LEVEL },
+  trustProxy: env.TRUST_PROXY,
+  auth: {
+    db,
+    // No email provider yet: emails (with their links) are printed to the console.
+    mailer: new ConsoleMailer(),
+    appUrl: env.APP_URL,
+  },
 });
 
 const shutdown = async (signal: string) => {
