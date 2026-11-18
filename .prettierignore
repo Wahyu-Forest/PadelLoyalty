@@ -1,0 +1,16 @@
+node_modules
+dist
+out
+.next
+.turbo
+coverage
+playwright-report
+test-results
+pnpm-lock.yaml
+apps/api/drizzle/meta
+apps/web/android
+apps/web/ios
+apps/web/next-env.d.ts
+.claude
+# Owned by the architecture PR (#67); format separately to avoid conflicts.
+docs
