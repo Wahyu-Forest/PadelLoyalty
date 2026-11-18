@@ -1,6 +1,6 @@
 # PadelLoyalty
 
-Soul Padel's member app (court bookings and the Almas loyalty programme) for iOS, Android and the web, plus a staff back office. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design.
+Soul Padel's member app (court bookings and the Soul points loyalty programme) for iOS, Android and the web, plus a staff back office. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design.
 
 **Live preview:** https://wahyu-forest.github.io/PadelLoyalty/ (staff: https://wahyu-forest.github.io/PadelLoyalty/admin/), deployed from `main`. See [Deployment](#deployment-github-pages).
 
