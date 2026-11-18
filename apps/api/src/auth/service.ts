@@ -6,7 +6,7 @@ import {
 } from "@padelloyalty/shared";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { emailTokens, sessions, users, type UserRow } from "../db/schema.js";
+import { emailTokens, rotatedRefreshTokens, sessions, users, type UserRow } from "../db/schema.js";
 import type { Mailer } from "../email/mailer.js";
 import { ApiError, rateLimited } from "../http/errors.js";
 import {
@@ -264,12 +264,20 @@ export class AuthService {
       .limit(1);
 
     if (!session) {
-      // An already-rotated token presented again: assume it was stolen and end
-      // the session, so neither the thief nor the victim can keep using it.
-      await this.db
-        .update(sessions)
-        .set({ revokedAt: now })
-        .where(and(eq(sessions.previousRefreshTokenHash, tokenHash), isNull(sessions.revokedAt)));
+      // A token this session already rotated away from, presented again: it
+      // was copied. End the session so neither the thief nor the member can
+      // keep using it, however many refreshes ago it was replaced.
+      const [rotated] = await this.db
+        .select({ sessionId: rotatedRefreshTokens.sessionId })
+        .from(rotatedRefreshTokens)
+        .where(eq(rotatedRefreshTokens.tokenHash, tokenHash))
+        .limit(1);
+      if (rotated) {
+        await this.db
+          .update(sessions)
+          .set({ revokedAt: now })
+          .where(and(eq(sessions.id, rotated.sessionId), isNull(sessions.revokedAt)));
+      }
       throw invalidRefreshToken();
     }
     if (session.revokedAt !== null || session.refreshTokenExpiresAt <= now) {
@@ -277,26 +285,32 @@ export class AuthService {
     }
 
     const tokens = this.newTokenPair(now);
-    const rotated = await this.db
-      .update(sessions)
-      .set({
-        accessTokenHash: hashToken(tokens.accessToken),
-        accessTokenExpiresAt: tokens.accessTokenExpiresAt,
-        refreshTokenHash: hashToken(tokens.refreshToken),
-        refreshTokenExpiresAt: tokens.refreshTokenExpiresAt,
-        previousRefreshTokenHash: tokenHash,
-        lastRefreshedAt: now,
-      })
-      // Only if nobody rotated it in the meantime (two refreshes racing).
-      .where(
-        and(
-          eq(sessions.id, session.id),
-          eq(sessions.refreshTokenHash, tokenHash),
-          isNull(sessions.revokedAt),
-        ),
-      )
-      .returning({ id: sessions.id });
-    if (rotated.length === 0) throw invalidRefreshToken();
+    const rotated = await this.db.transaction(async (tx) => {
+      const updated = await tx
+        .update(sessions)
+        .set({
+          accessTokenHash: hashToken(tokens.accessToken),
+          accessTokenExpiresAt: tokens.accessTokenExpiresAt,
+          refreshTokenHash: hashToken(tokens.refreshToken),
+          refreshTokenExpiresAt: tokens.refreshTokenExpiresAt,
+          lastRefreshedAt: now,
+        })
+        // Only if nobody rotated it in the meantime (two refreshes racing).
+        .where(
+          and(
+            eq(sessions.id, session.id),
+            eq(sessions.refreshTokenHash, tokenHash),
+            isNull(sessions.revokedAt),
+          ),
+        )
+        .returning({ id: sessions.id });
+      if (updated.length === 0) return false;
+      await tx
+        .insert(rotatedRefreshTokens)
+        .values({ tokenHash, sessionId: session.id, rotatedAt: now });
+      return true;
+    });
+    if (!rotated) throw invalidRefreshToken();
 
     const [user] = await this.db.select().from(users).where(eq(users.id, session.userId));
     if (!user) throw invalidRefreshToken();

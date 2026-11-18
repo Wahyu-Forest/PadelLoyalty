@@ -168,6 +168,24 @@ describe("POST /auth/refresh (session persists between app launches)", () => {
     expect((await t.me(second.accessToken)).statusCode).toBe(401);
   });
 
+  // Regression (QA, PR #75): only the immediately previous token used to be
+  // recognised, so a thief who refreshed twice kept the session.
+  it("revokes the session when a token rotated several refreshes ago is reused", async () => {
+    const first = await t.signUpVerified(EMAIL);
+    const second = (await t.post("/auth/refresh", { refreshToken: first.refreshToken })).json();
+    const third = (await t.post("/auth/refresh", { refreshToken: second.refreshToken })).json();
+    const fourth = (await t.post("/auth/refresh", { refreshToken: third.refreshToken })).json();
+
+    expect((await t.post("/auth/refresh", { refreshToken: first.refreshToken })).statusCode).toBe(
+      401,
+    );
+
+    expect((await t.post("/auth/refresh", { refreshToken: fourth.refreshToken })).statusCode).toBe(
+      401,
+    );
+    expect((await t.me(fourth.accessToken)).statusCode).toBe(401);
+  });
+
   it("lets only one of two simultaneous refreshes with the same token succeed", async () => {
     const first = await t.signUpVerified(EMAIL);
 

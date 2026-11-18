@@ -48,7 +48,7 @@ export const users = pgTable(
 /**
  * One row per logged-in device. Holds SHA-256 hashes of the current access
  * and refresh tokens (never the tokens themselves). Refreshing rotates both;
- * the previous refresh hash is kept to detect reuse of a stolen token.
+ * the replaced refresh hashes go to `rotatedRefreshTokens`.
  */
 export const sessions = pgTable(
   "sessions",
@@ -61,7 +61,6 @@ export const sessions = pgTable(
     accessTokenExpiresAt: timestamp({ withTimezone: true }).notNull(),
     refreshTokenHash: text().notNull(),
     refreshTokenExpiresAt: timestamp({ withTimezone: true }).notNull(),
-    previousRefreshTokenHash: text(),
     userAgent: text(),
     createdAt: timestamp({ withTimezone: true }).notNull(),
     lastRefreshedAt: timestamp({ withTimezone: true }),
@@ -70,9 +69,25 @@ export const sessions = pgTable(
   (table) => [
     uniqueIndex("sessions_access_token_hash_unique").on(table.accessTokenHash),
     uniqueIndex("sessions_refresh_token_hash_unique").on(table.refreshTokenHash),
-    uniqueIndex("sessions_previous_refresh_token_hash_unique").on(table.previousRefreshTokenHash),
     index("sessions_user_id_idx").on(table.userId),
   ],
+);
+
+/**
+ * Every refresh token a session has rotated away from (hashed). Presenting
+ * one again means it was copied, so the session is revoked (reuse detection).
+ * Rows go when their session is deleted.
+ */
+export const rotatedRefreshTokens = pgTable(
+  "rotated_refresh_tokens",
+  {
+    tokenHash: text().primaryKey(),
+    sessionId: uuid()
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    rotatedAt: timestamp({ withTimezone: true }).notNull(),
+  },
+  (table) => [index("rotated_refresh_tokens_session_id_idx").on(table.sessionId)],
 );
 
 export const emailTokenPurpose = pgEnum("email_token_purpose", ["verify_email", "password_reset"]);
