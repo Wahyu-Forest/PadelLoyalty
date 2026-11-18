@@ -1,7 +1,7 @@
 {
   "name": "padelloyalty",
   "private": true,
-  "description": "Soul Padel member app and Almas loyalty programme",
+  "description": "Soul Padel member app and Soul points loyalty programme",
   "packageManager": "pnpm@10.28.0",
   "engines": {
     "node": ">=22"
