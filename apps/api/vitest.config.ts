@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-import { readDotEnv } from "./test/support/test-env";
+import { readDotEnv } from "./test/support/test-env.js";
 
 export default defineConfig({
   test: {
