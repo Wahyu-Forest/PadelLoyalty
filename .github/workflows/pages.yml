@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: read
+  # configure-pages reads the repo's Pages settings in the build job.
+  pages: read
 
 # One deployment at a time. A newer push queues behind the running one rather
 # than cancelling a deployment halfway through.
