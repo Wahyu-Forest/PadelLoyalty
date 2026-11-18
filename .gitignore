@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+
+# Tooling caches
+.turbo/
+.eslintcache
+coverage/
+
+# Test output
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# Environment (commit only .env.example)
+.env
+.env.*
+!.env.example
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Signing keys (never commit)
+*.jks
+*.keystore
