@@ -31,6 +31,17 @@ const signUpButton = (page: Page) =>
 const logInButton = (page: Page) => page.getByRole("button", { name: /log ?in|sign ?in/i });
 const logOutControl = (page: Page) => page.getByRole("button", { name: /log ?out|sign ?out/i });
 
+/**
+ * Waits until React has hydrated the page's form. Typing into the static HTML
+ * before hydration is lost when React takes over the controlled inputs.
+ */
+async function waitForHydratedForm(page: Page) {
+  await page.waitForFunction(() => {
+    const form = document.querySelector("form");
+    return !!form && Object.keys(form).some((k) => k.startsWith("__reactProps"));
+  });
+}
+
 async function openSignUp(page: Page) {
   await page.goto("./");
   await page
@@ -38,6 +49,7 @@ async function openSignUp(page: Page) {
     .first()
     .click();
   await expect(signUpButton(page)).toBeVisible();
+  await waitForHydratedForm(page);
 }
 async function openLogIn(page: Page) {
   await page.goto("./");
@@ -46,6 +58,7 @@ async function openLogIn(page: Page) {
     .first()
     .click();
   await expect(logInButton(page)).toBeVisible();
+  await waitForHydratedForm(page);
 }
 async function logInVia(page: Page, email: string, password = PASSWORD) {
   await openLogIn(page);
@@ -57,6 +70,7 @@ async function logInVia(page: Page, email: string, password = PASSWORD) {
 /** Follows an emailed link the way the browser would (path is relative to the base path). */
 async function followEmailLink(page: Page, path: "verify-email" | "reset-password", token: string) {
   await page.goto(`${path}/#token=${encodeURIComponent(token)}`);
+  if (path === "reset-password") await waitForHydratedForm(page);
 }
 
 function expectNoHorizontalOverflow(page: Page) {
@@ -288,9 +302,11 @@ test.describe("log in and log out (AC3)", () => {
     await logInVia(page, email);
     await page.reload();
     await expect(logOutControl(page)).toBeVisible();
-    const me = api.requests.filter((r) => r.path === "/auth/me");
-    expect(me.length).toBeGreaterThan(0);
-    for (const r of me) expect(r.authorization).toMatch(/^Bearer pla_/);
+    const authed = api.requests.filter((r) => r.authorization !== undefined);
+    for (const r of authed) expect(r.authorization, r.path).toMatch(/^Bearer pla_/);
+    for (const r of api.requests) expect(r.cookie, r.path).toBeUndefined();
+    const cookies = await page.context().cookies();
+    expect(cookies.map((c) => c.value).join(" ")).not.toMatch(/pla_|plr_/);
   });
 
   test("double-clicking log in creates one session", async ({ page }) => {
@@ -327,9 +343,11 @@ test.describe("password reset (AC4)", () => {
     api.seed(email, PASSWORD);
     await openLogIn(page);
     await page.getByRole("link", { name: /forgot/i }).click();
+    await expect(page.getByRole("heading", { name: /forgot/i })).toBeVisible();
+    await waitForHydratedForm(page);
     await emailField(page).fill(email);
     await page.getByRole("button", { name: /send|reset/i }).click();
-    await expect(page.getByText(/check your (email|inbox)/i).first()).toBeVisible();
+    await expect(page.getByText(/valid for 1 hour/i).first()).toBeVisible();
 
     const token = api.lastEmail(email, "password_reset")?.token;
     expect(token, "reset email").toBeTruthy();
@@ -349,9 +367,11 @@ test.describe("password reset (AC4)", () => {
   test("forgot password for an unknown email shows the same confirmation", async ({ page }) => {
     await openLogIn(page);
     await page.getByRole("link", { name: /forgot/i }).click();
+    await expect(page.getByRole("heading", { name: /forgot/i })).toBeVisible();
+    await waitForHydratedForm(page);
     await emailField(page).fill(uniqueEmail());
     await page.getByRole("button", { name: /send|reset/i }).click();
-    await expect(page.getByText(/check your (email|inbox)/i).first()).toBeVisible();
+    await expect(page.getByText(/valid for 1 hour/i).first()).toBeVisible();
     expect(api.emails).toHaveLength(0);
   });
 
@@ -369,9 +389,11 @@ test.describe("password reset (AC4)", () => {
     api.seed(email, PASSWORD);
     await openLogIn(page);
     await page.getByRole("link", { name: /forgot/i }).click();
+    await expect(page.getByRole("heading", { name: /forgot/i })).toBeVisible();
+    await waitForHydratedForm(page);
     await emailField(page).fill(email);
     await page.getByRole("button", { name: /send|reset/i }).click();
-    await expect(page.getByText(/check your (email|inbox)/i).first()).toBeVisible();
+    await expect(page.getByText(/valid for 1 hour/i).first()).toBeVisible();
     const token = api.lastEmail(email, "password_reset")!.token!;
 
     await followEmailLink(page, "reset-password", token);

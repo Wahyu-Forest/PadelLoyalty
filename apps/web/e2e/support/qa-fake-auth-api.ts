@@ -55,7 +55,13 @@ export class FakeAuthApi {
   readonly accounts = new Map<string, Account>();
   readonly sessions: Session[] = [];
   readonly emails: CapturedEmail[] = [];
-  readonly requests: { method: string; path: string; body: unknown; authorization?: string }[] = [];
+  readonly requests: {
+    method: string;
+    path: string;
+    body: unknown;
+    authorization?: string;
+    cookie?: string;
+  }[] = [];
   private tokens = new Map<
     string,
     { email: string; type: "verify_email" | "password_reset"; used: boolean }
@@ -292,7 +298,13 @@ export class FakeAuthApi {
         body = request.postData();
       }
       const authorization = request.headers()["authorization"];
-      this.requests.push({ method: request.method(), path: url.pathname, body, authorization });
+      this.requests.push({
+        method: request.method(),
+        path: url.pathname,
+        body,
+        authorization,
+        cookie: request.headers()["cookie"],
+      });
       if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
       const [status, json] = this.handle(request.method(), url.pathname, body, authorization);
       return route.fulfill({
