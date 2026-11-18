@@ -168,6 +168,30 @@ describe("POST /auth/refresh", () => {
     expectApiError(await getMe(h.app, next.accessToken), 401, "unauthorized");
   });
 
+  it("reuse of a refresh token rotated more than once ago also revokes the session", async () => {
+    const { session } = await activeMember(h);
+    const second = expectSession(await refresh(session.refreshToken));
+    const third = expectSession(await refresh(second.refreshToken));
+
+    // The first token was rotated two refreshes ago: still a reuse of a rotated token.
+    expectApiError(await refresh(session.refreshToken), 401, "invalid_refresh_token");
+    expectApiError(await refresh(third.refreshToken), 401, "invalid_refresh_token");
+    expectApiError(await getMe(h.app, third.accessToken), 401, "unauthorized");
+  });
+
+  it("theft: an attacker who refreshes a stolen token twice is cut off when the member's app refreshes", async () => {
+    const { session } = await activeMember(h);
+    // Attacker steals the refresh token and refreshes twice before the member's app does.
+    const attacker1 = expectSession(await refresh(session.refreshToken));
+    const attacker2 = expectSession(await refresh(attacker1.refreshToken));
+
+    // The member's app now presents the (rotated) token it holds.
+    expectApiError(await refresh(session.refreshToken), 401, "invalid_refresh_token");
+    // The whole session must be revoked, so the attacker's tokens stop working.
+    expectApiError(await refresh(attacker2.refreshToken), 401, "invalid_refresh_token");
+    expectApiError(await getMe(h.app, attacker2.accessToken), 401, "unauthorized");
+  });
+
   it("reuse detection does not affect the member's other sessions", async () => {
     const { email, session } = await activeMember(h);
     const other = await logIn(h, email);
