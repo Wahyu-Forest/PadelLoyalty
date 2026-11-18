@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { fetchHealth } from "./health";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetchHealth, HEALTH_TIMEOUT_MS } from "./health";
 
 const API = "http://api.test";
 const timestamp = "2026-11-18T10:00:00.000Z";
@@ -59,6 +59,79 @@ describe("fetchHealth", () => {
     expect(await fetchHealth(API, fetchImpl as typeof fetch)).toEqual({
       ok: false,
       error: "Invalid response from API",
+    });
+  });
+
+  describe("timeout", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const timedOut = { ok: false, error: "API unreachable (no response after 5s)" };
+
+    it("defaults to 5 seconds", () => {
+      expect(HEALTH_TIMEOUT_MS).toBe(5_000);
+    });
+
+    it("reports the API as unreachable when the request never settles", async () => {
+      vi.useFakeTimers();
+      // Accepts the connection but never answers, and ignores the abort signal.
+      const fetchImpl = () => new Promise<Response>(() => {});
+      let result: unknown = "pending";
+      void fetchHealth(API, fetchImpl as typeof fetch).then((r) => (result = r));
+
+      await vi.advanceTimersByTimeAsync(HEALTH_TIMEOUT_MS - 1);
+      expect(result).toBe("pending");
+      await vi.advanceTimersByTimeAsync(1);
+      expect(result).toEqual(timedOut);
+    });
+
+    it("aborts the underlying request when it times out", async () => {
+      vi.useFakeTimers();
+      let requestSignal: AbortSignal | undefined;
+      const fetchImpl = (_url: string, init?: RequestInit) => {
+        requestSignal = init?.signal ?? undefined;
+        return new Promise<Response>(() => {});
+      };
+      const result = fetchHealth(API, fetchImpl as typeof fetch, undefined, 1_000);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await result).toEqual({ ok: false, error: "API unreachable (no response after 1s)" });
+      expect(requestSignal?.aborted).toBe(true);
+    });
+
+    it("times out when the headers arrive but the body never finishes", async () => {
+      vi.useFakeTimers();
+      const fetchImpl = async () =>
+        new Response(new ReadableStream({ start: () => {} }), { status: 200 });
+      const result = fetchHealth(API, fetchImpl as typeof fetch);
+
+      await vi.advanceTimersByTimeAsync(HEALTH_TIMEOUT_MS);
+      expect(await result).toEqual(timedOut);
+    });
+
+    it("clears the timer once the API answers", async () => {
+      vi.useFakeTimers();
+      const fetchImpl = async () => jsonResponse({ status: "ok", database: "up", timestamp });
+
+      expect((await fetchHealth(API, fetchImpl as typeof fetch)).ok).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("passes the caller's abort (e.g. unmount) through to the request", async () => {
+      let requestSignal: AbortSignal | undefined;
+      const fetchImpl = (_url: string, init?: RequestInit) => {
+        requestSignal = init?.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("", "AbortError"))),
+        );
+      };
+      const caller = new AbortController();
+      const result = fetchHealth(API, fetchImpl as typeof fetch, caller.signal);
+
+      caller.abort();
+      expect(requestSignal?.aborted).toBe(true);
+      expect(await result).toEqual({ ok: false, error: "API unreachable" });
     });
   });
 });

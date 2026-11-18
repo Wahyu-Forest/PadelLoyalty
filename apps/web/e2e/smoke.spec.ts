@@ -51,6 +51,20 @@ test("shows the API as unreachable when the request fails", async ({ page }) => 
   await expect(page.getByTestId("api-status-api")).toHaveText("API unreachable");
 });
 
+test("gives up on an API that never answers", async ({ page }) => {
+  // Accept the request but never respond (like a wrong LAN address that hangs).
+  await page.route("**/health", () => {});
+
+  await page.goto("/");
+
+  await expect(page.getByTestId("api-status-api")).toHaveText("Checking…");
+  await expect(page.getByTestId("api-status-api")).toHaveText(
+    "API unreachable (no response after 5s)",
+    { timeout: 10_000 },
+  );
+  await expect(page.getByTestId("api-status-database")).toHaveText("Unknown");
+});
+
 test("layout fits the viewport without horizontal scrolling", async ({ page }) => {
   await stubHealth(page, 200, { status: "ok", database: "up", timestamp });
 
