@@ -16,7 +16,7 @@ import {
   verifyDummyPassword,
   verifyPassword,
 } from "./crypto.js";
-import type { RateLimiter} from "./rate-limit.js";
+import type { RateLimiter } from "./rate-limit.js";
 import { type RateLimitRuleName } from "./rate-limit.js";
 
 const MINUTE = 60_000;
