@@ -190,8 +190,12 @@ describe("POST /auth/verify-email/resend", () => {
 
   it("answers a verified account the same and sends no verification link", async () => {
     const { email, token } = await freshUnverified();
-    const before = await post(h.app, "/auth/verify-email/resend", { email });
-    await post(h.app, "/auth/verify-email", { token });
+    // Reference response from another unverified account (a resend for `email` would
+    // invalidate `token`).
+    const before = await post(h.app, "/auth/verify-email/resend", {
+      email: (await freshUnverified()).email,
+    });
+    expect((await post(h.app, "/auth/verify-email", { token })).statusCode).toBe(200);
     h.mailer.clear();
 
     const after = await post(h.app, "/auth/verify-email/resend", { email });
