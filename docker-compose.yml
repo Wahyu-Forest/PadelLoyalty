@@ -1,0 +1,24 @@
+# Local PostgreSQL for development and tests.
+#   docker compose up -d
+# Creates the `padelloyalty` (dev) and `padelloyalty_test` (tests) databases.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: padel
+      POSTGRES_PASSWORD: padel
+      POSTGRES_DB: padelloyalty
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U padel -d padelloyalty"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
