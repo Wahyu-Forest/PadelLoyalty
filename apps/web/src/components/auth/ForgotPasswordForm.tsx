@@ -34,6 +34,7 @@ export function ForgotPasswordForm() {
   if (message) {
     return (
       <section className="card" data-testid="forgot-done">
+        <h2>Check your email</h2>
         <Notice>{message}</Notice>
         <p>The link is valid for 1 hour. Check your spam folder if it doesn&apos;t arrive.</p>
         <p className="links">
