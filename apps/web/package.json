@@ -1,0 +1,40 @@
+{
+  "name": "@padelloyalty/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PadelLoyalty web app: member area at / and staff back office at /admin. Static export, wrapped by Capacitor for iOS and Android.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "serve out --listen 3000",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "cap:sync": "cap sync",
+    "cap:android": "cap open android",
+    "cap:ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@padelloyalty/shared": "workspace:*",
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
+    "@playwright/test": "^1.65.1",
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.6",
+    "eslint-config-prettier": "^10.1.8",
+    "serve": "^14.2.8",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.1"
+  }
+}
