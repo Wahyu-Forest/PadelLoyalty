@@ -66,7 +66,7 @@ Both pages call the API's `GET /health` and show whether the API and the databas
 | Variable              | Where                    | Default                                                         | Purpose                                                                            |
 | --------------------- | ------------------------ | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `DATABASE_URL`        | `apps/api/.env`          | (required)                                                      | PostgreSQL for the API and `db:migrate`                                            |
-| `TEST_DATABASE_URL`   | `apps/api/.env` or shell | `postgres://padel:padel@localhost:5432/padelloyalty_test`       | Database used by the API integration tests                                         |
+| `TEST_DATABASE_URL`   | `apps/api/.env` or shell | (required for `pnpm test`; no fallback)                         | Database the API integration tests migrate. Must differ from `DATABASE_URL`        |
 | `HOST`, `PORT`        | `apps/api/.env`          | `0.0.0.0`, `4000`                                               | Where the API listens                                                              |
 | `CORS_ORIGINS`        | `apps/api/.env`          | `http://localhost:3000,capacitor://localhost,https://localhost` | Browser origins allowed to call the API                                            |
 | `LOG_LEVEL`           | `apps/api/.env`          | `info`                                                          | Fastify log level                                                                  |
@@ -78,14 +78,14 @@ Never commit `.env` files; only the `.env.example` files are tracked.
 
 Run from the repo root:
 
-| Command          | What it does                                                                                                                                                          |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm lint`      | ESLint in every package, then `prettier --check`                                                                                                                      |
-| `pnpm typecheck` | `tsc --noEmit` in every package                                                                                                                                       |
-| `pnpm test`      | Vitest unit tests in every package, plus the API integration tests against a real Postgres (needs `TEST_DATABASE_URL` reachable; it runs migrations on that database) |
-| `pnpm build`     | Builds `packages/shared`, the API (`apps/api/dist`) and the web static export (`apps/web/out`)                                                                        |
-| `pnpm test:e2e`  | Builds the web app and runs the Playwright smoke test (desktop and phone viewport) against the static export. The API is stubbed in these tests                       |
-| `pnpm format`    | Rewrites files with Prettier                                                                                                                                          |
+| Command          | What it does                                                                                                                                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm lint`      | ESLint in every package, then `prettier --check`                                                                                                                                               |
+| `pnpm typecheck` | `tsc --noEmit` in every package                                                                                                                                                                |
+| `pnpm test`      | Vitest unit tests in every package, plus the API integration tests against a real Postgres (needs `TEST_DATABASE_URL`, from the shell or `apps/api/.env`; it runs migrations on that database) |
+| `pnpm build`     | Builds `packages/shared`, the API (`apps/api/dist`) and the web static export (`apps/web/out`)                                                                                                 |
+| `pnpm test:e2e`  | Builds the web app and runs the Playwright smoke test (desktop and phone viewport) against the static export. The API is stubbed in these tests                                                |
+| `pnpm format`    | Rewrites files with Prettier                                                                                                                                                                   |
 
 First time with Playwright: `pnpm --filter @padelloyalty/web exec playwright install --with-deps chromium`. If you cannot download Playwright's browser but have Google Chrome installed, run `E2E_BROWSER_CHANNEL=chrome pnpm test:e2e`.
 
