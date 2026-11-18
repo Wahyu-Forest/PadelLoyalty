@@ -44,6 +44,16 @@ describe("fetchHealth", () => {
     });
   });
 
+  it("reports the API as unreachable without a request when no API is configured", async () => {
+    const fetchImpl = vi.fn();
+
+    expect(await fetchHealth(null, fetchImpl as typeof fetch)).toEqual({
+      ok: false,
+      error: "API unreachable",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("reports other HTTP errors", async () => {
     const fetchImpl = async () => new Response("nope", { status: 500 });
 

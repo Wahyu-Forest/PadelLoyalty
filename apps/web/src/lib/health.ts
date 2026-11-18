@@ -13,13 +13,16 @@ export const HEALTH_TIMEOUT_MS = 5_000;
  * Gives up after `timeoutMs` (an API that accepts the connection but never
  * answers, e.g. a wrong LAN address on a device) and aborts the request.
  * `signal` lets the caller cancel early, e.g. when the component unmounts.
+ * `apiUrl` is null when the build has no API configured: no request is made.
  */
 export async function fetchHealth(
-  apiUrl: string,
+  apiUrl: string | null,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
   timeoutMs: number = HEALTH_TIMEOUT_MS,
 ): Promise<HealthResult> {
+  if (apiUrl === null) return { ok: false, error: "API unreachable" };
+
   // Combine the caller's signal with our timeout by hand rather than with
   // AbortSignal.any/timeout, which older Android WebViews lack.
   const controller = new AbortController();
