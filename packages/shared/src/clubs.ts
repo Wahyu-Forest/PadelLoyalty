@@ -4,6 +4,7 @@ import { DEFAULT_CURRENCY, isValidCurrency } from "./money.js";
 import {
   WEEKDAYS,
   WEEKDAY_LABELS,
+  canonicalTimeZoneCase,
   fromLocalDateTime,
   isValidLocalDateTime,
   isValidTimeZone,
@@ -84,6 +85,7 @@ export const timeOfDaySchema = z
 export const timeZoneSchema = z
   .string({ error: "Choose a time zone" })
   .trim()
+  .transform(canonicalTimeZoneCase)
   .refine(isValidTimeZone, { error: "Choose an IANA time zone such as Europe/London" });
 
 export const currencySchema = z

@@ -12,9 +12,27 @@ export const COMMON_CURRENCIES = ["GBP", "EUR", "USD", "IDR", "SGD", "AED", "AUD
 
 const CURRENCY_CODE = /^[A-Z]{3}$/;
 
-/** True for a three-letter ISO 4217 code this runtime can format, e.g. `GBP`. */
+let knownCurrencies: Set<string> | null | undefined;
+
+/** ISO 4217 codes in current use, from the runtime; null where `Intl.supportedValuesOf` is missing. */
+function currencyList(): Set<string> | null {
+  if (knownCurrencies === undefined) {
+    const intl = Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] };
+    knownCurrencies = intl.supportedValuesOf ? new Set(intl.supportedValuesOf("currency")) : null;
+  }
+  return knownCurrencies;
+}
+
+/**
+ * True for an ISO 4217 code in current use, e.g. `GBP`. Well-formed but
+ * unassigned codes such as `ABC` are rejected (Node and modern browsers list
+ * the codes; an older browser without the list only checks the format, and
+ * the API decides anyway).
+ */
 export function isValidCurrency(value: string): boolean {
   if (!CURRENCY_CODE.test(value)) return false;
+  const known = currencyList();
+  if (known) return known.has(value);
   try {
     new Intl.NumberFormat("en", { style: "currency", currency: value });
     return true;

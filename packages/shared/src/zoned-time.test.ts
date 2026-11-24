@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalTimeZoneCase,
   fromLocalDateTime,
   isValidLocalDateTime,
   isValidTimeZone,
@@ -18,6 +19,25 @@ describe("isValidTimeZone", () => {
     "rejects %j",
     (zone) => expect(isValidTimeZone(zone)).toBe(false),
   );
+});
+
+describe("canonicalTimeZoneCase (QA #56: Europe/london was stored as typed)", () => {
+  it("fixes the case of a known zone", () => {
+    expect(canonicalTimeZoneCase("Europe/london")).toBe("Europe/London");
+    expect(canonicalTimeZoneCase("europe/LONDON")).toBe("Europe/London");
+    expect(canonicalTimeZoneCase("utc")).toBe("UTC");
+  });
+
+  it("keeps aliases and unknown names as given", () => {
+    expect(canonicalTimeZoneCase("Asia/Kolkata")).toBe("Asia/Kolkata");
+    expect(canonicalTimeZoneCase("Nowhere/Here")).toBe("Nowhere/Here");
+  });
+
+  it("treats only the exact spelling as valid", () => {
+    expect(isValidTimeZone("Europe/london")).toBe(false);
+    expect(isValidTimeZone("Asia/Kolkata")).toBe(true);
+    expect(isValidTimeZone("Asia/Calcutta")).toBe(true);
+  });
 });
 
 describe("times of day", () => {
