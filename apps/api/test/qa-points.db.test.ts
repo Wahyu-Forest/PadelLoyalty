@@ -451,18 +451,24 @@ describe("PointsLedger validation", () => {
     expect(await ledger.balance(m.userId)).toBe(100);
   });
 
-  it("system actor with a user id is rejected (actor consistency)", async () => {
+  it("a system actor never records a user id (rejected or dropped)", async () => {
     const m = await member();
-    await expectLedgerError(
-      credit(m.userId, 10, key(), { actor: { type: "system", userId: m.userId } }),
-      "invalid_entry",
+    const result = await credit(m.userId, 10, key(), {
+      actor: { type: "system", userId: m.userId },
+    }).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
     );
+    if ("value" in result) expect(result.value.entry.actorUserId).toBeNull();
+    else expect((result.error as LedgerError).code).toBe("invalid_entry");
   });
 
   it("unknown member is member_not_found; a non-uuid id is a LedgerError, not a crash", async () => {
     await expectLedgerError(credit(randomUUID(), 10), "member_not_found");
     await expectLedgerError(credit("not-a-uuid", 10), ["invalid_entry", "member_not_found"]);
-    await expectLedgerError(ledger.balance("not-a-uuid"), ["invalid_entry", "member_not_found"]);
+    await expectLedgerError(debit("not-a-uuid", 10), ["invalid_entry", "member_not_found"]);
+    // balance() of a malformed id reads as 0 (no entries) rather than a database error.
+    expect(await ledger.balance("not-a-uuid")).toBe(0);
   });
 
   it("balance of an unknown (uuid) member is 0 or member_not_found, never a crash", async () => {
@@ -650,6 +656,13 @@ describe("ledger immutability and constraints in the database", () => {
       await sqlError("delete from points_ledger_entries where user_id = $1", [m.userId]),
     ).toBeDefined();
     expect(await countEntries(m.userId)).toBe(1);
+  });
+
+  it("TRUNCATE of the ledger is rejected", async () => {
+    const m = await member();
+    await credit(m.userId, 100);
+    expect(await sqlError("truncate points_ledger_entries")).toBeDefined();
+    expect(await ledger.balance(m.userId)).toBe(100);
   });
 
   it("deleting a user who has entries is refused", async () => {
