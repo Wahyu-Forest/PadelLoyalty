@@ -14,6 +14,9 @@ describe("money", () => {
     expect(isValidCurrency("gbp")).toBe(false);
     expect(isValidCurrency("POUND")).toBe(false);
     expect(isValidCurrency("")).toBe(false);
+    // QA #56: well-formed but unassigned codes were accepted.
+    for (const code of ["ABC", "QQQ", "ZZZ"]) expect(isValidCurrency(code), code).toBe(false);
+    expect(isValidCurrency("JPY")).toBe(true);
   });
 
   it("knows minor-unit digits", () => {

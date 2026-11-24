@@ -291,6 +291,8 @@ describe("clubs", () => {
     ["an abbreviation", { timeZone: "BST" }, "timeZone"],
     ["an unknown zone", { timeZone: "Europe/Atlantis" }, "timeZone"],
     ["a bad currency", { currency: "POUNDS" }, "currency"],
+    // QA #56 regression: well-formed but unassigned ISO 4217 codes were accepted.
+    ["an unassigned currency code", { currency: "ABC" }, "currency"],
     ["an empty name", { name: "  " }, "name"],
     ["a missing address", { address: undefined }, "address"],
     [
@@ -338,6 +340,13 @@ describe("clubs", () => {
       "validation_error",
     );
     expect(error.fieldErrors?.openingHours?.join(" ")).toContain("Wednesday");
+  });
+
+  it("stores a wrong-case time zone in its canonical spelling (QA #56 regression)", async () => {
+    const club = await createClub({ timeZone: "europe/LONDON" });
+    expect(club.timeZone).toBe("Europe/London");
+    const other = await createClub({ name: "Kolkata", timeZone: "Asia/Kolkata" });
+    expect(other.timeZone).toBe("Asia/Kolkata");
   });
 
   it("accepts closing at 24:00", async () => {

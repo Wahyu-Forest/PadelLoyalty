@@ -46,15 +46,33 @@ export function timeOfDay(minutes: number): TimeOfDay {
  */
 const IANA_ZONE_NAME = /^(?:UTC|[A-Z][A-Za-z_]+(?:\/[A-Za-z0-9_+-]+){1,2})$/;
 
-/** True for an IANA time zone this JavaScript runtime knows, e.g. `Europe/London`. */
+function resolvedTimeZone(value: string): string | null {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True for an IANA time zone this JavaScript runtime knows, spelled exactly
+ * (`Europe/London`, not `Europe/london`). Use `canonicalTimeZoneCase` first to
+ * fix the case of user input.
+ */
 export function isValidTimeZone(value: string): boolean {
   if (!IANA_ZONE_NAME.test(value)) return false;
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
+  const resolved = resolvedTimeZone(value);
+  // Intl accepts any case; only the exact spelling is valid. Aliases (Asia/Kolkata,
+  // which some runtimes resolve to Asia/Calcutta) are kept as given.
+  return (
+    resolved !== null && (resolved === value || resolved.toLowerCase() !== value.toLowerCase())
+  );
+}
+
+/** `europe/london` → `Europe/London`: the runtime's spelling when only the case differs. */
+export function canonicalTimeZoneCase(value: string): string {
+  const resolved = resolvedTimeZone(value);
+  return resolved && resolved.toLowerCase() === value.toLowerCase() ? resolved : value;
 }
 
 /** The default for new clubs. */
