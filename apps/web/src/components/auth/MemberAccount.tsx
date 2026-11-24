@@ -4,6 +4,7 @@ import { POINTS_NAME } from "@padelloyalty/shared";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
+import { ConsentPending, GuardianAfterVerification } from "./ConsentPending";
 import { Notice } from "./Form";
 import { ResendVerification } from "./ResendVerification";
 
@@ -59,8 +60,11 @@ export function MemberAccount() {
             Verify your email to activate your account. We sent a link to {user.email}; it&apos;s
             valid for 24 hours.
           </p>
+          <GuardianAfterVerification user={user} />
           <ResendVerification email={user.email} />
         </Notice>
+      ) : user.status === "pending_consent" ? (
+        <ConsentPending user={user} />
       ) : (
         <p>Your {POINTS_NAME} and bookings will appear here.</p>
       )}

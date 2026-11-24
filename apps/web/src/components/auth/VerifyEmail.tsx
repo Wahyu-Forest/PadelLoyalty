@@ -12,7 +12,9 @@ import { useAuth } from "./AuthProvider";
 import { clearHash, FormError, Notice, useHashToken } from "./Form";
 
 type State =
-  { kind: "verifying" } | { kind: "done"; message: string } | { kind: "failed"; message: string };
+  | { kind: "verifying" }
+  | { kind: "done"; message: string; pendingConsent: boolean }
+  | { kind: "failed"; message: string };
 
 // A link token works once: never send it twice, even if the effect runs twice
 // (React strict mode in development).
@@ -38,7 +40,11 @@ export function VerifyEmail() {
       clearHash();
       if (!active) return;
       if (result.ok) {
-        setState({ kind: "done", message: result.data.message });
+        setState({
+          kind: "done",
+          message: result.data.message,
+          pendingConsent: result.data.accountStatus === "pending_consent",
+        });
         // If this browser is logged in, show the account as verified at once.
         await session.reloadUser();
       } else {
@@ -60,7 +66,15 @@ export function VerifyEmail() {
       {state.kind === "verifying" ? <p>Verifying your email…</p> : null}
       {state.kind === "done" ? (
         <>
-          <Notice testId="verify-success">{state.message} Your account is active.</Notice>
+          <Notice testId="verify-success">
+            {state.pendingConsent ? state.message : `${state.message} Your account is active.`}
+          </Notice>
+          {state.pendingConsent ? (
+            <p data-testid="verify-pending-consent">
+              Your account will be active once your parent or guardian confirms. You can log in to
+              see where the request stands or send it again.
+            </p>
+          ) : null}
           <p className="links">
             {loggedIn ? <Link href="/">Go to home</Link> : <Link href="/login/">Log in</Link>}
           </p>
