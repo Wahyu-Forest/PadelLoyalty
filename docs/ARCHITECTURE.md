@@ -14,6 +14,7 @@ Soul Padel's member app: court bookings and the Soul points loyalty programme, o
 | 6 | **Points are called "Soul points" for now** (was "Almas"). The name is provisional: UI copy uses `POINTS_NAME` from `packages/shared`, and code identifiers stay neutral (`points`). | 2026-11-18 |
 | 7 | **Own email + password accounts with bearer-token sessions** (#1): a short-lived access token and a rotating refresh token, no cookies. See [Authentication](#authentication). | 2026-11-18 |
 | 8 | **Guardian consent by email link** (#3): under-18s nominate a parent or guardian, who confirms or declines through a single-use, expiring link. See [Guardian consent](#guardian-consent-under-18s). | 2026-11-18 |
+| 9 | **Club setup by admins, enforced in the API** (#56): IANA time zone per club, money as integer minor units plus an ISO currency per club, pricing = slot lengths + standard (off-peak) prices + non-overlapping peak bands, priced by slot start time. See [Clubs and courts](#clubs-courts-and-prices). | 2026-11-24 |
 
 ## Stack
 
@@ -86,6 +87,17 @@ Issue #3. Contract and edge cases: [`docs/api/consent.md`](api/consent.md); sche
 - **Audit:** one `guardian_consent_requests` row per consent email: guardian email, member's date of birth, method (`email_link`), requested/expires/decided times, decision, IP and user agent of the decision, the guardian's statement, superseded time. The foreign key restricts deleting a member with consent records.
 - **One check for member features:** `isAccountFullyActive(status)` (shared) and the `requireActiveAccount` preHandler (API, `403 account_not_active`). Booking and points routes must use it.
 - **Not decided / not built:** the Safeguarding Policy review (placeholder text marks where the policy goes), a staff view of consent records, promotion on the 18th birthday, asking pre-#3 accounts for a date of birth, a club time zone for "today".
+
+## Clubs, courts and prices
+
+Issue #56. Contract: [`docs/api/clubs.md`](api/clubs.md); schemas: `packages/shared/src/clubs.ts`, `zoned-time.ts`, `money.ts`.
+
+- **Access.** The web app is a static export, so every rule is enforced by the API. `/admin/clubs*` routes run `requireAuth`, then `ClubAccessPolicy` (`apps/api/src/clubs/access.ts`): `401` without a token, `403 forbidden` for roles other than admin, `403 account_not_active` for an unverified admin. Club-scoped routes call `canManageClub(user, clubId)`, so club managers (#39) need only a club assignment and a policy change. The `/admin` pages hide what the role can't use, with a clear "No access" message. The first admin is created with `pnpm --filter @padelloyalty/api admin:create <email>` (verified accounts only).
+- **Time zones.** Each club has an IANA zone. Opening hours, price bands and block times are wall-clock times there; block instants are stored in UTC (`timestamptz`) and converted with `Intl` only (`fromLocalDateTime`, `toLocalDateTime`). Times skipped when the clocks go forward are rejected; repeated times use the earlier instant.
+- **Money.** Integer minor units (`amountMinor`) plus the club's ISO 4217 `currency` (default GBP). Prices are parsed from decimal text without floats. A club's currency can't change while it has prices.
+- **Pricing.** A JSON document on the club: 1 to 4 slot lengths, one standard price per length (the off-peak price and the fallback for any time no band covers), and up to 20 non-overlapping peak bands with their own prices. A slot is priced by its start time (`priceForSlot`). Booking (#23) should store the price it charged, so later price changes don't rewrite history.
+- **History.** Clubs and courts are deactivated, never deleted (foreign keys restrict it). Cancelling a block sets `cancelled_at`. Blocks record who created and cancelled them.
+- **For booking (#23).** Public reads: `GET /clubs`, `GET /clubs/:id` (active courts and pricing), `GET /clubs/:id/blocks`. In the booking transaction, call `ClubService.findBlockingBlocks(courtId, startsAt, endsAt, tx)` and `isWithinOpeningHours`.
 
 ## Testing
 
