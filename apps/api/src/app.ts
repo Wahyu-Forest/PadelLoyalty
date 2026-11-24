@@ -7,6 +7,8 @@ import { AuthService } from "./auth/service.js";
 import type { Database } from "./db/client.js";
 import type { Mailer } from "./email/mailer.js";
 import { registerErrorHandling } from "./http/errors.js";
+import { PointsLedger } from "./points/ledger.js";
+import { pointsRoutes } from "./points/routes.js";
 import { healthRoutes } from "./routes/health.js";
 
 export interface AuthOptions {
@@ -26,7 +28,7 @@ export interface AppOptions {
   logger?: FastifyServerOptions["logger"];
   /** Trust X-Forwarded-For from a reverse proxy (for per-IP rate limits). */
   trustProxy?: boolean;
-  /** Auth routes are registered only when given. */
+  /** Auth and points routes are registered only when given. */
   auth?: AuthOptions;
 }
 
@@ -53,6 +55,11 @@ export async function buildApp(options: AppOptions) {
     const service = new AuthService({ ...shared, consent: new ConsentService(shared) });
     app.decorate("authService", service);
     await app.register(authRoutes, { service });
+
+    // Points (#6): the ledger service for server features, and the read-only member routes.
+    const ledger = new PointsLedger({ db: options.auth.db, now });
+    app.decorate("pointsLedger", ledger);
+    await app.register(pointsRoutes, { authService: service, ledger, now });
   }
 
   return app;
@@ -62,5 +69,7 @@ declare module "fastify" {
   interface FastifyInstance {
     /** Present when the app was built with `auth`. Use with `requireAuth(app.authService)`. */
     authService?: AuthService;
+    /** Present when the app was built with `auth`. The only way to write points (#6). */
+    pointsLedger?: PointsLedger;
   }
 }
