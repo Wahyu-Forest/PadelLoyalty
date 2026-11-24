@@ -1,6 +1,6 @@
 # PadelLoyalty architecture
 
-Soul Padel's member app: court bookings and the Almas loyalty programme, on iOS, Android and the web, plus a staff back office, all from one Next.js codebase.
+Soul Padel's member app: court bookings and the Soul points loyalty programme, on iOS, Android and the web, plus a staff back office, all from one Next.js codebase.
 
 ## Key decisions
 
@@ -11,6 +11,7 @@ Soul Padel's member app: court bookings and the Almas loyalty programme, on iOS,
 | 3 | **A payment provider handles card payments** (e.g. Stripe or Xendit, still to be chosen). We never store card numbers. | 2026-11-18 |
 | 4 | **One Next.js app for members and staff**, packaged as iOS and Android apps with Capacitor (Option A). Chosen over Expo for simplicity: one front end, strong web. | 2026-11-18 |
 | 5 | **API: Fastify + Drizzle ORM** (default chosen at setup; can be revisited before much code depends on it). | 2026-11-18 |
+| 6 | **Points are called "Soul points" for now** (was "Almas"). The name is provisional: UI copy uses `POINTS_NAME` from `packages/shared`, and code identifiers stay neutral (`points`). | 2026-11-18 |
 
 ## Stack
 
@@ -37,7 +38,7 @@ docs/
 
 ## Domain rules that shape the design
 
-- **Almas are an append-only ledger.** Every earn, redeem, expiry and staff adjustment is a ledger entry. The balance is the sum of the entries, never a value that is edited directly. This gives the audit trail (#34), points history (#9) and breakage reporting (#37).
+- **Soul points are an append-only ledger.** Every earn, redeem, expiry and staff adjustment is a ledger entry. The balance is the sum of the entries, never a value that is edited directly. This gives the audit trail (#34), points history (#9) and breakage reporting (#37).
 - **No double counting.** One check-in for one booking can earn points only once per member. Redemption codes can be used once. Both are enforced with database constraints, not just application checks.
 - **No double booking.** A court slot can hold only one booking, enforced in the database so that simultaneous requests can't both succeed.
 - **Everyone on a booking earns.** Points are awarded per checked-in player on the booking (#8), not only to the booker.
