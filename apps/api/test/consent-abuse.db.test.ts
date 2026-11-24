@@ -78,19 +78,35 @@ describe("consentRequestsPerAccount", () => {
     );
     const other = await pendingMinor(h);
     expect((await requestConsent(h, other.session.accessToken)).statusCode).toBe(200);
-    // Window passes: allowed again.
+    // Window passes: allowed again (log in again: access tokens last 15 minutes).
     h.clock.advance(HOUR + 1000);
-    expect((await requestConsent(h, minor.session.accessToken)).statusCode).toBe(200);
+    const { accessToken } = await logIn(h, minor.email);
+    expect((await requestConsent(h, accessToken)).statusCode).toBe(200);
   });
 
-  it("the default is 5 per hour", async () => {
+  it("the default is 5 per hour (new guardian each time, so the per-guardian limit is not hit)", async () => {
     h = await makeConsentHarness(connection, { rateLimits: "defaults" });
     const minor = await pendingMinor(h);
     for (let i = 0; i < 5; i++) {
-      const r = await requestConsent(h, minor.session.accessToken);
+      const r = await requestConsent(h, minor.session.accessToken, {
+        guardianEmail: guardianEmail(),
+      });
       expect(r.statusCode, `request ${i + 1}: ${r.body}`).toBe(200);
     }
+    expectRateLimited(
+      await requestConsent(h, minor.session.accessToken, { guardianEmail: guardianEmail() }),
+    );
+  });
+
+  it("the default per-guardian limit (5 per hour) includes the first email sent on verify", async () => {
+    h = await makeConsentHarness(connection, { rateLimits: "defaults" });
+    const minor = await pendingMinor(h);
+    for (let i = 0; i < 4; i++) {
+      const r = await requestConsent(h, minor.session.accessToken);
+      expect(r.statusCode, `resend ${i + 1}: ${r.body}`).toBe(200);
+    }
     expectRateLimited(await requestConsent(h, minor.session.accessToken));
+    expect(consentEmails(h, minor.guardian)).toHaveLength(5);
   });
 });
 
@@ -111,7 +127,8 @@ describe("consentEmailsPerGuardian", () => {
     expectRateLimited(await requestConsent(h, session.accessToken));
 
     h.clock.advance(HOUR + 1000);
-    const r = await requestConsent(h, session.accessToken);
+    const again = await logIn(h, third.email);
+    const r = await requestConsent(h, again.accessToken);
     expect(r.statusCode, r.body).toBe(200);
     expect(r.json().state).toBe("pending");
     expect(consentEmails(h, g)).toHaveLength(3);

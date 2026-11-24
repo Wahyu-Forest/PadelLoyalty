@@ -191,12 +191,13 @@ describe("Guardian confirms", () => {
     expect(response.statusCode, response.body).toBe(200);
     expect(consentDecisionResponseSchema.parse(response.json()).decision).toBe("confirm");
 
-    expect(await meStatus(h, minor.session.accessToken)).toBe("active");
-    const consent = await getConsent(h, minor.session.accessToken);
-    expect(consent.state).toBe("granted");
-    expect(consent.decidedAt).toBe(h.clock.now().toISOString());
+    // Access tokens last 15 minutes; log in again after the 3 hours.
     const login = await logIn(h, minor.email);
     expect(login.user.status).toBe("active");
+    expect(await meStatus(h, login.accessToken)).toBe("active");
+    const consent = await getConsent(h, login.accessToken);
+    expect(consent.state).toBe("granted");
+    expect(consent.decidedAt).toBe(h.clock.now().toISOString());
   });
 
   it("requires isParentOrGuardian: true", async () => {
@@ -427,14 +428,16 @@ describe("Link expiry (7 days)", () => {
     expectApiError(await review(h, minor.token), 400, "invalid_token");
     expectApiError(await confirm(h, minor.token), 400, "invalid_token");
     expectApiError(await decline(h, minor.token), 400, "invalid_token");
-    expect(await meStatus(h, minor.session.accessToken)).toBe("pending_consent");
+    const login = await logIn(h, minor.email);
+    expect(login.user.status).toBe("pending_consent");
   });
 
   it("an expired request shows as expired; resending gives a fresh 7-day link", async () => {
     const minor = await pendingMinor(h);
     h.clock.advance(CONSENT_LINK_MS + SECOND);
-    expect((await getConsent(h, minor.session.accessToken)).state).toBe("expired");
-    const response = await requestConsent(h, minor.session.accessToken);
+    const { accessToken } = await logIn(h, minor.email);
+    expect((await getConsent(h, accessToken)).state).toBe("expired");
+    const response = await requestConsent(h, accessToken);
     expect(response.statusCode, response.body).toBe(200);
     expect(response.json().state).toBe("pending");
     expect((await confirm(h, consentToken(h, minor.guardian))).statusCode).toBe(200);

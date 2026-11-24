@@ -300,9 +300,10 @@ describe("Age boundaries (calendar dates, today's date in UTC)", () => {
   });
 
   it("a member who turns 18 between sign-up and verifying goes straight to active", async () => {
-    await harness("2026-11-23T12:00:00Z");
+    await harness("2026-11-23T18:00:00Z");
     const minor = await signUpMinor(h, { dateOfBirth: "2008-11-24" });
-    h.clock.advance(24 * 60 * 60 * 1000);
+    // 7 hours later it is 24 Nov (UTC); the 24-hour verify link is still valid.
+    h.clock.advance(7 * 60 * 60 * 1000);
     expect((await verifyMember(h, minor.email)).accountStatus).toBe("active");
     expect(consentEmails(h, minor.guardian)).toHaveLength(0);
   });
