@@ -1,7 +1,7 @@
 /**
- * In-browser stand-in for the auth API (docs/api/auth.md), installed with
- * Playwright routes so the e2e suite runs against the static export without a
- * server. Requests are parsed and responses built with the shared Zod schemas,
+ * In-browser stand-in for the API (docs/api/auth.md, consent.md and
+ * points.md), installed with Playwright routes so the e2e suite runs against
+ * the static export without a server. Requests are parsed and responses built with the shared Zod schemas,
  * so the fake cannot drift from the contract without failing.
  * The real API is covered by apps/api/test/auth.*.db.test.ts.
  */
@@ -21,6 +21,7 @@ import {
   messageResponseSchema,
   passwordResetConfirmRequestSchema,
   passwordResetRequestSchema,
+  pointsBalanceResponseSchema,
   refreshRequestSchema,
   resendVerificationRequestSchema,
   signUpRequestSchemaOn,
@@ -68,6 +69,8 @@ export class FakeAuthApi {
   readonly emails: Email[] = [];
   /** Every call the app made, e.g. "POST /auth/login". */
   readonly calls: string[] = [];
+  /** Points balance per email (#6); 0 when unset. */
+  readonly points = new Map<string, number>();
   /** Force the next response for a path, e.g. a 429. */
   readonly overrides = new Map<
     string,
@@ -257,6 +260,20 @@ export class FakeAuthApi {
           const account = this.authenticated(headers);
           if (!account) return [401, error("unauthorized", "You need to log in to do that.")];
           return [200, meResponseSchema.parse({ user: account.user })];
+        }
+        case "GET /points/balance": {
+          const account = this.authenticated(headers);
+          if (!account) return [401, error("unauthorized", "You need to log in to do that.")];
+          if (account.user.status !== "active") {
+            return [403, error("account_not_active", "Your account is not active yet.")];
+          }
+          return [
+            200,
+            pointsBalanceResponseSchema.parse({
+              balance: this.points.get(account.user.email) ?? 0,
+              asOf: new Date().toISOString(),
+            }),
+          ];
         }
         case "GET /auth/consent": {
           const account = this.authenticated(headers);
