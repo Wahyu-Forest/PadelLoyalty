@@ -21,6 +21,16 @@ const envSchema = z.object({
             .map((origin) => origin.trim())
             .filter((origin) => origin.length > 0),
     ),
+  /** Web app base URL (with any base path) for links in emails, e.g. https://wahyu-forest.github.io/PadelLoyalty */
+  APP_URL: z
+    .url({ error: "APP_URL must be a URL such as http://localhost:3000" })
+    .default("http://localhost:3000")
+    .transform((value) => value.replace(/\/+$/, "")),
+  /** Set to true behind a reverse proxy so per-IP rate limits see the client IP. */
+  TRUST_PROXY: z
+    .enum(["true", "false", ""])
+    .default("false")
+    .transform((value) => value === "true"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
 });
 

@@ -59,6 +59,16 @@ pnpm dev
 - Web app: http://localhost:3000 (member home) and http://localhost:3000/admin (staff)
 - API: http://localhost:4000/health
 
+### Accounts (sign up / log in)
+
+Pages: `/signup/`, `/login/`, `/verify-email/`, `/forgot-password/`, `/reset-password/`; the member home shows the logged-in state and a log-out button. There is no email provider yet: the API **prints each email, with its link, to its console**. Open the link in the browser to verify an email or reset a password. The API endpoints are documented in [`docs/api/auth.md`](docs/api/auth.md) and the design in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#authentication).
+
+To make a staff account for testing, sign up, then set the role in the database:
+
+```bash
+psql "$DATABASE_URL" -c "update users set role = 'admin' where email = 'you@example.com';"
+```
+
 Both pages call the API's `GET /health` and show whether the API and the database are up.
 
 `GET /health` returns `200 {"status":"ok","database":"up",...}` when PostgreSQL is reachable, and `503 {"status":"degraded","database":"down",...}` when it is not. The response shape is `healthResponseSchema` in `packages/shared`.
@@ -72,6 +82,8 @@ Both pages call the API's `GET /health` and show whether the API and the databas
 | `HOST`, `PORT`          | `apps/api/.env`          | `0.0.0.0`, `4000`                                               | Where the API listens                                                                      |
 | `CORS_ORIGINS`          | `apps/api/.env`          | `http://localhost:3000,capacitor://localhost,https://localhost` | Browser origins allowed to call the API                                                    |
 | `LOG_LEVEL`             | `apps/api/.env`          | `info`                                                          | Fastify log level                                                                          |
+| `APP_URL`               | `apps/api/.env`          | `http://localhost:3000`                                         | Web app URL (with any base path) used in verification and password-reset email links       |
+| `TRUST_PROXY`           | `apps/api/.env`          | `false`                                                         | `true` behind a reverse proxy, so per-IP rate limits see the client's IP                   |
 | `NEXT_PUBLIC_API_URL`   | `apps/web/.env.local`    | `http://localhost:4000`                                         | API base URL for the web app. **Inlined at build time**: rebuild after changing it         |
 | `NEXT_PUBLIC_BASE_PATH` | build env                | (unset: served from `/`)                                        | URL path the export is served under. Only the GitHub Pages build sets it (`/PadelLoyalty`) |
 
@@ -111,7 +123,7 @@ How it works:
 **One-time setup (repository owner):**
 
 - **Settings → Pages → Build and deployment → Source: GitHub Actions.** Until this is set, the workflow fails at "Configure Pages". It can't be enabled from the workflow itself.
-- Optional: **Settings → Secrets and variables → Actions → Variables →** `PAGES_API_URL`, the HTTPS base URL of a hosted API. While it is unset (there's no hosted API yet), the site shows "API unreachable" and makes no API calls. When an API is hosted, its `CORS_ORIGINS` must include `https://wahyu-forest.github.io`, and the site must be redeployed after changing the variable, because the URL is inlined at build time.
+- Optional: **Settings → Secrets and variables → Actions → Variables →** `PAGES_API_URL`, the HTTPS base URL of a hosted API. While it is unset (there's no hosted API yet), the site shows "API unreachable" and makes no API calls. When an API is hosted, its `CORS_ORIGINS` must include `https://wahyu-forest.github.io` and its `APP_URL` must be `https://wahyu-forest.github.io/PadelLoyalty` (for email links), and the site must be redeployed after changing the variable, because the URL is inlined at build time.
 
 The `github-pages` environment created on the first deploy may restrict which branches can deploy. Keep `main` allowed.
 
