@@ -11,7 +11,6 @@ import {
   POINTS_LEDGER_ERROR_CODES,
   pointsBalanceResponseSchema,
 } from "@padelloyalty/shared";
-import { sql } from "drizzle-orm";
 import type { LightMyRequestResponse } from "fastify";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseConnection } from "../src/db/client.js";

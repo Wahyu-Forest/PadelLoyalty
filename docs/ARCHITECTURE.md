@@ -87,6 +87,19 @@ Issue #3. Contract and edge cases: [`docs/api/consent.md`](api/consent.md); sche
 - **One check for member features:** `isAccountFullyActive(status)` (shared) and the `requireActiveAccount` preHandler (API, `403 account_not_active`). Booking and points routes must use it.
 - **Not decided / not built:** the Safeguarding Policy review (placeholder text marks where the policy goes), a staff view of consent records, promotion on the 18th birthday, asking pre-#3 accounts for a date of birth, a club time zone for "today".
 
+## Points ledger
+
+Issue #6. Contract and service interface: [`docs/api/points.md`](api/points.md); schemas: `packages/shared/src/points.ts`.
+
+- **One table, `points_ledger_entries`,** one row per earn, redeem, adjustment or expiry: signed `amount` (sign checked per entry type), `reason`, optional `reference`, `actor_type` + `actor_user_id`, `created_at`.
+- **Append-only in the database:** a trigger rejects `UPDATE`, `DELETE` and `TRUNCATE`; the foreign key refuses deleting a member with entries. Corrections are new `adjustment` entries.
+- **Balance = `SUM(amount)`**, read at request time through the `(user_id, created_at)` index. Nothing stores a balance.
+- **No double counting:** every entry has an `idempotency_key` derived from its source event (e.g. `checkin:<bookingId>:<userId>`), with a unique index. Replaying the same entry returns the original; reusing a key for a different entry is an error.
+- **Concurrency:** `PointsLedger` serialises writes per member with a transaction-scoped advisory lock, then checks the balance, so racing debits cannot overdraw. Callers can pass their own transaction so, e.g., a check-in and its points commit together.
+- **Writes only from server code** (`PointsLedger.credit` / `debit`); the only points endpoint is `GET /points/balance` (active accounts). Earn (#7), redeem (#15), adjustments (#34) and expiry (#10) add their own endpoints or jobs on top.
+- **Web:** the home balance refetches on focus, on visibility and on `notifyPointsChanged()`, which earn and redeem call after success.
+- **Not done yet:** the database role the API uses in production should get only `SELECT, INSERT` on the ledger (the owner can still disable triggers); a running-balance or snapshot cache if sums ever get slow.
+
 ## Testing
 
 - Unit and integration tests: Vitest or Jest

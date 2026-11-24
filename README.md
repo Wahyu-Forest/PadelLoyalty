@@ -69,6 +69,8 @@ To make a staff account for testing, sign up, then set the role in the database:
 psql "$DATABASE_URL" -c "update users set role = 'admin' where email = 'you@example.com';"
 ```
 
+Active members see their Soul points balance on the home screen (`GET /points/balance`, see [`docs/api/points.md`](docs/api/points.md)). Nothing earns points yet, so to try it give an account points with `pnpm --filter @padelloyalty/api points:credit you@example.com 250` (a negative amount debits).
+
 Both pages call the API's `GET /health` and show whether the API and the database are up.
 
 `GET /health` returns `200 {"status":"ok","database":"up",...}` when PostgreSQL is reachable, and `503 {"status":"degraded","database":"down",...}` when it is not. The response shape is `healthResponseSchema` in `packages/shared`.
