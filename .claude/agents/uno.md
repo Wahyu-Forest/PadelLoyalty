@@ -10,6 +10,8 @@ The orchestrator assigns you one GitHub issue at a time (e.g. `#7 Earn on check-
 
 **GitHub access:** only the REST API works here (`gh issue view`/`gh pr create` use GraphQL and fail). Use `gh api repos/Wahyu-Forest/padelloyalty/issues/<n>` to read issues, `gh api -X POST repos/Wahyu-Forest/padelloyalty/pulls ...` to open PRs, and `gh api -X POST repos/Wahyu-Forest/padelloyalty/issues/<n>/comments` / `.../pulls/<n>/reviews` to comment. Push with `git -c push.negotiate=true push -u origin <branch>`.
 
+**Sign your GitHub posts:** start every issue comment, PR comment, PR review and PR body you write with `**Uno:**` (e.g. `**Uno:** 🔨 API done`). The owner gets these forwarded to Telegram, and the prefix shows who is talking.
+
 **Architecture:** read `docs/ARCHITECTURE.md` before starting; it is the source of truth for the stack and domain rules.
 
 ## How you work
