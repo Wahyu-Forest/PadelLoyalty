@@ -95,6 +95,22 @@ export function build(EVENT, payload) {
   return null;
 }
 
+const MAX_ATTEMPTS = 4;
+const MAX_WAIT_SECONDS = 90;
+
+/**
+ * Seconds to wait before retrying, or null when retrying won't help.
+ * 429 uses Telegram's retry_after; 5xx and network-level hiccups back off briefly.
+ */
+export function retryDelaySeconds(status, out, attempt) {
+  if (status === 429) {
+    const after = Number(out?.parameters?.retry_after) || 5 * attempt;
+    return Math.min(after + 1, MAX_WAIT_SECONDS);
+  }
+  if (status >= 500) return Math.min(5 * attempt, MAX_WAIT_SECONDS);
+  return null;
+}
+
 /** Telegram HTML message text. */
 export function format(msg) {
   const lines = [
@@ -119,23 +135,33 @@ async function main() {
     console.log(`Nothing to send for ${event}/${payload.action}.`);
     return;
   }
-  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: CHAT_ID,
-      text: format(msg),
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
+  const body = JSON.stringify({
+    chat_id: CHAT_ID,
+    text: format(msg),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
   });
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok || !out.ok) {
+  // Telegram rate-limits bots (HTTP 429 with parameters.retry_after). Wait and
+  // retry a few times rather than dropping the update.
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    });
+    const out = await res.json().catch(() => ({}));
+    if (res.ok && out.ok) {
+      console.log(attempt === 1 ? "Sent." : `Sent on attempt ${attempt}.`);
+      return;
+    }
     // Never print the token; Telegram's description is enough to diagnose.
     console.error(`Telegram API error ${res.status}: ${out.description ?? "unknown"}`);
-    process.exit(1);
+    const wait = retryDelaySeconds(res.status, out, attempt);
+    if (wait === null || attempt === MAX_ATTEMPTS) break;
+    console.log(`Retrying in ${wait}s (attempt ${attempt + 1} of ${MAX_ATTEMPTS})...`);
+    await new Promise((r) => setTimeout(r, wait * 1000));
   }
-  console.log("Sent.");
+  process.exit(1);
 }
 
 if (process.env.GITHUB_ACTIONS === "true") await main();
