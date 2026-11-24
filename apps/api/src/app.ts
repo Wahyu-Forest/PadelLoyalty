@@ -1,6 +1,7 @@
 import cors from "@fastify/cors";
 import Fastify, { type FastifyServerOptions } from "fastify";
 import { RateLimiter, type RateLimitRules } from "./auth/rate-limit.js";
+import { ConsentService } from "./auth/consent-service.js";
 import { authRoutes } from "./auth/routes.js";
 import { AuthService } from "./auth/service.js";
 import type { Database } from "./db/client.js";
@@ -42,13 +43,14 @@ export async function buildApp(options: AppOptions) {
 
   if (options.auth) {
     const now = options.auth.now ?? (() => new Date());
-    const service = new AuthService({
+    const shared = {
       db: options.auth.db,
       mailer: options.auth.mailer,
       appUrl: options.auth.appUrl,
       now,
       limiter: new RateLimiter(options.auth.rateLimits ?? {}, () => now().getTime()),
-    });
+    };
+    const service = new AuthService({ ...shared, consent: new ConsentService(shared) });
     app.decorate("authService", service);
     await app.register(authRoutes, { service });
   }

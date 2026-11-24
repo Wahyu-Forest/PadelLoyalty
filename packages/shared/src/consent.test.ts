@@ -85,6 +85,15 @@ describe("signUpRequestSchemaOn(today)", () => {
     ).toBe(true);
   });
 
+  it.each(["2025-02-29", "2024-13-01", "nope", ""])(
+    "reports an impossible date of birth %j as a field error (never throws)",
+    (dateOfBirth) => {
+      const result = schema.safeParse({ ...base, dateOfBirth });
+      expect(result.success).toBe(false);
+      expect(fieldErrors(result)).toContain("dateOfBirth");
+    },
+  );
+
   it("rejects a date of birth in the future", () => {
     const result = schema.safeParse({
       ...base,

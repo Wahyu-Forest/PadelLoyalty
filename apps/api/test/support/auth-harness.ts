@@ -26,6 +26,7 @@ import {
 } from "../../src/db/client.js";
 import { runMigrations } from "../../src/db/migrations.js";
 import { CapturingMailer, tokenFromLink } from "../../src/email/mailer.js";
+import { withAdultDob } from "./auth-app.js";
 import { maskPassword, requireTestDatabaseUrl } from "./test-env.js";
 
 export const APP_URL = "http://app.test";
@@ -114,7 +115,8 @@ export function post(
   return app.inject({
     method: "POST",
     url,
-    payload: body as object,
+    // #3: sign-up bodies without a date of birth get an adult one.
+    payload: withAdultDob(url, body) as object,
     remoteAddress: options.ip ?? "203.0.113.10",
     headers: {
       ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),

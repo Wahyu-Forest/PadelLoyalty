@@ -56,8 +56,13 @@ describe("AuthApi", () => {
       throw new TypeError("Failed to fetch");
     };
     expect(
-      (await new AuthApi(API, failing as typeof fetch).signUp({ email: "a@b.co", password: "x" }))
-        .ok,
+      (
+        await new AuthApi(API, failing as typeof fetch).signUp({
+          email: "a@b.co",
+          password: "x",
+          dateOfBirth: "1990-01-01",
+        })
+      ).ok,
     ).toBe(false);
     const noApi = vi.fn();
     const result = await new AuthApi(null, noApi as typeof fetch).resendVerification("a@b.co");

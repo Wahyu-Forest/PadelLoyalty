@@ -140,6 +140,8 @@ export type SignUpRequest = z.infer<typeof signUpRequestSchema>;
  */
 export function signUpRequestSchemaOn(today: CalendarDate) {
   return signUpRequestSchema.superRefine((value, ctx) => {
+    // Zod runs this even when a field failed; an invalid date already has its error.
+    if (!isValidCalendarDate(value.dateOfBirth)) return;
     if (value.dateOfBirth > today) {
       ctx.addIssue({
         code: "custom",
