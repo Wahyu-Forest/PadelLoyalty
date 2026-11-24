@@ -5,8 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { errorMessage } from "@/lib/auth/api";
+import { safeNextPath } from "@/lib/safe-next";
 import { useAuth } from "./AuthProvider";
 import { Field, fieldErrorsFrom, FormError } from "./Form";
+
+/** `?next=/admin/` brings staff back to the back office after logging in (#56). */
+function destination(): string {
+  return safeNextPath(new URLSearchParams(window.location.search).get("next")) ?? "/";
+}
 
 export function LogInForm() {
   const { session, state } = useAuth();
@@ -18,7 +24,7 @@ export function LogInForm() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (state.status === "authenticated") router.replace("/");
+    if (state.status === "authenticated") router.replace(destination());
   }, [state.status, router]);
 
   async function onSubmit(event: React.FormEvent) {
@@ -38,7 +44,7 @@ export function LogInForm() {
       setError(errorMessage(result.error));
       return;
     }
-    router.replace("/");
+    router.replace(destination());
   }
 
   return (

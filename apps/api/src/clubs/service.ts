@@ -1,4 +1,5 @@
 import {
+  WEEKDAYS,
   toLocalDateTime,
   type AdminClubSummary,
   type Club,
@@ -75,7 +76,10 @@ export function toClub(row: ClubRow): Club {
     address: row.address,
     timeZone: row.timeZone,
     currency: row.currency,
-    openingHours: row.openingHours,
+    // jsonb stores object keys in its own order; answer Monday first.
+    openingHours: Object.fromEntries(
+      WEEKDAYS.map((day) => [day, row.openingHours[day] ?? null]),
+    ) as OpeningHours,
     active: row.active,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

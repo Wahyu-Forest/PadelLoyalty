@@ -37,6 +37,8 @@ export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ClientErr
 
 export const REQUEST_TIMEOUT_MS = 15_000;
 
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
 const NETWORK_ERROR: ClientError = {
   code: "network_error",
   message: "Can't reach Soul Padel right now. Check your connection and try again.",
@@ -113,10 +115,15 @@ export class AuthApi {
     return this.request("/auth/consent/decision", consentDecisionResponseSchema, { body });
   }
 
-  private async request<S extends z.ZodType | null>(
+  /**
+   * One JSON call to the API: parses an error body as `ApiErrorResponse` and a
+   * success body with `schema` (`null` for an empty body). Never throws. Also
+   * used by the club setup client (#56).
+   */
+  async request<S extends z.ZodType | null>(
     path: string,
     schema: S,
-    options: { method?: "GET" | "POST"; body?: unknown; accessToken?: string },
+    options: { method?: HttpMethod; body?: unknown; accessToken?: string },
   ): Promise<ApiResult<S extends z.ZodType ? z.output<S> : null>> {
     type Out = S extends z.ZodType ? z.output<S> : null;
     if (this.apiUrl === null) return { ok: false, error: NETWORK_ERROR };
