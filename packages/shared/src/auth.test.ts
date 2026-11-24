@@ -38,9 +38,13 @@ describe("newPasswordSchema", () => {
 
 describe("request schemas", () => {
   it("sign-up enforces the password rules; login does not", () => {
-    expect(signUpRequestSchema.safeParse({ email: "a@b.co", password: "short" }).success).toBe(
-      false,
-    );
+    expect(
+      signUpRequestSchema.safeParse({
+        email: "a@b.co",
+        password: "short",
+        dateOfBirth: "1990-01-01",
+      }).success,
+    ).toBe(false);
     expect(logInRequestSchema.safeParse({ email: "a@b.co", password: "short" }).success).toBe(true);
     expect(logInRequestSchema.safeParse({ email: "a@b.co", password: "" }).success).toBe(false);
   });
