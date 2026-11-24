@@ -19,6 +19,7 @@ import {
   logIn,
   makeHarness,
   openTestDatabase,
+  ADULT_DOB,
   PASSWORD,
   post,
   signUp,
@@ -92,6 +93,7 @@ describe("POST /auth/signup: happy path", () => {
     const response = await post(h.app, "/auth/signup", {
       email,
       password: PASSWORD,
+      dateOfBirth: ADULT_DOB,
       role: "admin",
     });
     expect([202, 400]).toContain(response.statusCode);
@@ -108,6 +110,7 @@ describe("POST /auth/signup: happy path", () => {
     const response = await post(h.app, "/auth/signup", {
       email,
       password: PASSWORD,
+      dateOfBirth: ADULT_DOB,
       status: "active",
       emailVerified: true,
     });
@@ -181,7 +184,11 @@ describe("POST /auth/signup: email normalisation and duplicates", () => {
     const passwords = Array.from({ length: 8 }, (_, i) => `concurrent password ${i}`);
     const responses = await Promise.all(
       passwords.map((password, i) =>
-        post(h.app, "/auth/signup", { email: i % 2 ? email.toUpperCase() : email, password }),
+        post(h.app, "/auth/signup", {
+          email: i % 2 ? email.toUpperCase() : email,
+          password,
+          dateOfBirth: ADULT_DOB,
+        }),
       ),
     );
 
@@ -202,6 +209,7 @@ describe("POST /auth/signup: password rules", () => {
       await post(h.app, "/auth/signup", {
         email: uniqueEmail(),
         password: repeat(PASSWORD_MIN_LENGTH - 1),
+        dateOfBirth: ADULT_DOB,
       }),
       400,
       "validation_error",
@@ -222,6 +230,7 @@ describe("POST /auth/signup: password rules", () => {
       await post(h.app, "/auth/signup", {
         email: uniqueEmail(),
         password: repeat(PASSWORD_MAX_LENGTH + 1),
+        dateOfBirth: ADULT_DOB,
       }),
       400,
       "validation_error",
@@ -233,6 +242,7 @@ describe("POST /auth/signup: password rules", () => {
     const response = await post(h.app, "/auth/signup", {
       email: uniqueEmail(),
       password: "x".repeat(1_000_000),
+      dateOfBirth: ADULT_DOB,
     });
     expect([400, 413]).toContain(response.statusCode);
     expect(Date.now() - started).toBeLessThan(2_000);
@@ -241,7 +251,11 @@ describe("POST /auth/signup: password rules", () => {
   it("rejects missing, empty and non-string passwords", async () => {
     for (const password of [undefined, "", null, 1234567890123, ["a long password"]]) {
       expectApiError(
-        await post(h.app, "/auth/signup", { email: uniqueEmail(), password }),
+        await post(h.app, "/auth/signup", {
+          email: uniqueEmail(),
+          password,
+          dateOfBirth: ADULT_DOB,
+        }),
         400,
         "validation_error",
       );
@@ -282,7 +296,7 @@ describe("POST /auth/signup: invalid input", () => {
     ],
   ])("rejects an email that is %s with 400 validation_error", async (_name, email) => {
     const error = expectApiError(
-      await post(h.app, "/auth/signup", { email, password: PASSWORD }),
+      await post(h.app, "/auth/signup", { email, password: PASSWORD, dateOfBirth: ADULT_DOB }),
       400,
       "validation_error",
     );
@@ -291,7 +305,11 @@ describe("POST /auth/signup: invalid input", () => {
 
   it("answers unicode / IDN emails without a server error", async () => {
     for (const email of ["josé@example.com", "ana@exämple.com", "用户@例子.广告"]) {
-      const response = await post(h.app, "/auth/signup", { email, password: PASSWORD });
+      const response = await post(h.app, "/auth/signup", {
+        email,
+        password: PASSWORD,
+        dateOfBirth: ADULT_DOB,
+      });
       expect([202, 400], `${email}: ${response.body}`).toContain(response.statusCode);
     }
   });
