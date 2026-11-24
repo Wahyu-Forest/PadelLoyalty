@@ -12,6 +12,7 @@ import {
   makeHarness,
   MINUTE,
   openTestDatabase,
+  ADULT_DOB,
   PASSWORD,
   post,
   signUp,
@@ -209,12 +210,23 @@ describe("sign-up per IP (10 per hour)", () => {
     const ip = freshIp();
     for (let i = 0; i < 10; i++) {
       expect(
-        (await post(h.app, "/auth/signup", { email: uniqueEmail(), password: PASSWORD }, { ip }))
-          .statusCode,
+        (
+          await post(
+            h.app,
+            "/auth/signup",
+            { email: uniqueEmail(), password: PASSWORD, dateOfBirth: ADULT_DOB },
+            { ip },
+          )
+        ).statusCode,
       ).toBe(202);
     }
     expectRateLimited(
-      await post(h.app, "/auth/signup", { email: uniqueEmail(), password: PASSWORD }, { ip }),
+      await post(
+        h.app,
+        "/auth/signup",
+        { email: uniqueEmail(), password: PASSWORD, dateOfBirth: ADULT_DOB },
+        { ip },
+      ),
     );
   });
 });
@@ -294,7 +306,7 @@ describe("no account enumeration", () => {
 
     const responses = await Promise.all(
       [uniqueEmail("new"), unverified, verified].map((email) =>
-        post(h.app, "/auth/signup", { email, password: PASSWORD }),
+        post(h.app, "/auth/signup", { email, password: PASSWORD, dateOfBirth: ADULT_DOB }),
       ),
     );
     expect(responses.map((r) => r.statusCode)).toEqual([202, 202, 202]);
