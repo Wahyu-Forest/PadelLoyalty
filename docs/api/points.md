@@ -137,7 +137,10 @@ With no earn feature yet, give a test account points with the development script
 
 ```bash
 pnpm --filter @padelloyalty/api points:credit you@example.com 250 "Welcome bonus (test)"
+pnpm --filter @padelloyalty/api points:credit you@example.com -50    # a negative amount debits
 ```
+
+It refuses to run with `NODE_ENV=production`. It is a script, not an endpoint.
 
 ## Testing hooks (API)
 

@@ -1,9 +1,17 @@
-import { ACCOUNT_STATUSES, USER_ROLES } from "@padelloyalty/shared";
+import {
+  ACCOUNT_STATUSES,
+  POINTS_ACTOR_TYPES,
+  POINTS_ENTRY_MAX_AMOUNT,
+  POINTS_ENTRY_TYPES,
+  USER_ROLES,
+} from "@padelloyalty/shared";
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
   index,
+  integer,
   pgEnum,
   pgTable,
   text,
@@ -182,6 +190,66 @@ export const guardianConsentRequests = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// Points ledger (#6). See docs/api/points.md.
+// ---------------------------------------------------------------------------
+
+export const pointsEntryType = pgEnum("points_entry_type", POINTS_ENTRY_TYPES);
+export const pointsActorType = pgEnum("points_actor_type", POINTS_ACTOR_TYPES);
+
+/**
+ * Append-only points ledger: one row per earn, redeem, adjustment or expiry.
+ * A member's balance is SUM(amount) over their rows. Rows are never updated
+ * or deleted: the migration adds a trigger that rejects UPDATE and DELETE.
+ * Write only through `PointsLedger` (apps/api/src/points/ledger.ts).
+ */
+export const pointsLedgerEntries = pgTable(
+  "points_ledger_entries",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    entryType: pointsEntryType().notNull(),
+    /** Signed: earn > 0; redeem and expiry < 0; adjustment either sign; never 0. */
+    amount: integer().notNull(),
+    reason: text().notNull(),
+    /** Optional pointer to the source record, e.g. `booking:<id>`. */
+    reference: text(),
+    /** Identifies the source event; unique so it can be recorded only once. */
+    idempotencyKey: text().notNull(),
+    actorType: pointsActorType().notNull(),
+    /** Null for `system`; the member or staff user otherwise. */
+    actorUserId: uuid().references(() => users.id, { onDelete: "restrict" }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("points_ledger_entries_idempotency_key_unique").on(table.idempotencyKey),
+    // Balance (SUM over a member's rows) and history (#9, newest first).
+    index("points_ledger_entries_user_idx").on(table.userId, table.createdAt),
+    check(
+      "points_ledger_entries_amount_sign",
+      sql`${table.amount} <> 0
+        and abs(${table.amount}) <= ${sql.raw(String(POINTS_ENTRY_MAX_AMOUNT))}
+        and (
+          (${table.entryType} = 'earn' and ${table.amount} > 0)
+          or (${table.entryType} in ('redeem', 'expiry') and ${table.amount} < 0)
+          or ${table.entryType} = 'adjustment'
+        )`,
+    ),
+    check(
+      "points_ledger_entries_actor",
+      sql`(${table.actorType} = 'system') = (${table.actorUserId} is null)`,
+    ),
+    check(
+      "points_ledger_entries_text_lengths",
+      sql`char_length(${table.reason}) between 1 and 500
+        and char_length(${table.idempotencyKey}) between 1 and 200`,
+    ),
+  ],
+);
+
+export type PointsLedgerEntryRow = typeof pointsLedgerEntries.$inferSelect;
 export type UserRow = typeof users.$inferSelect;
 export type GuardianConsentRequestRow = typeof guardianConsentRequests.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
