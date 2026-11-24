@@ -127,6 +127,18 @@ How it works:
 
 The `github-pages` environment created on the first deploy may restrict which branches can deploy. Keep `main` allowed.
 
+## Telegram notifications
+
+`.github/workflows/telegram-notify.yml` forwards the team's activity to a Telegram chat: Uno, Duo and Quan's comments on issues and PRs, Quan's QA reviews, PRs they open, merges, and failed CI or deploy runs. Comments by people are not forwarded.
+
+One-time setup:
+
+1. In Telegram, open your bot and press **Start** (a bot can only message you after that).
+2. Get your numeric chat ID, e.g. from [@userinfobot](https://t.me/userinfobot).
+3. In the repo, go to **Settings → Secrets and variables → Actions** and add two repository secrets: `TELEGRAM_BOT_TOKEN` (from @BotFather) and `TELEGRAM_CHAT_ID`.
+
+Until both secrets exist, the workflow runs and skips sending. To use a group instead, add the bot to the group and use the group's chat ID.
+
 ## Database and migrations
 
 - Schema: `apps/api/src/db/schema.ts` (Drizzle ORM)
