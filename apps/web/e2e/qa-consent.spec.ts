@@ -81,7 +81,13 @@ async function logInVia(page: Page, email: string, password = PASSWORD) {
   await expect(logOutControl(page)).toBeVisible();
 }
 
+/**
+ * Opens the emailed link as a fresh page load (as a click in a mail app does).
+ * Going via about:blank stops Playwright turning a repeat visit into a
+ * same-document hash change.
+ */
 async function openGuardianLink(page: Page, token: string) {
+  await page.goto("about:blank");
   await page.goto(`guardian-consent/#token=${encodeURIComponent(token)}`);
 }
 
@@ -340,7 +346,9 @@ test.describe("AC2: guardian consent page (from the emailed link)", () => {
 
   test("a link without a token shows an error", async ({ page }) => {
     await page.goto("guardian-consent/");
-    await expect(page.getByText(/invalid|missing|expired|no longer valid/i).first()).toBeVisible();
+    await expect(
+      page.getByText(/invalid|missing|incomplete|expired|no longer valid/i).first(),
+    ).toBeVisible();
   });
 
   test("double-clicking confirm sends one decision", async ({ page }) => {

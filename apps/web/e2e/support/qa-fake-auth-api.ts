@@ -417,7 +417,12 @@ export class FakeAuthApi {
         } else {
           r.status = "declined";
         }
-        return [200, { message: "Thank you", decision: b.decision }];
+        // Same messages as the API (apps/api/src/auth/consent-service.ts).
+        const message =
+          b.decision === "confirm"
+            ? "Thank you. You've given consent, and the account is now active."
+            : "You've declined. The account stays inactive. Thank you for letting us know.";
+        return [200, { message, decision: b.decision }];
       }
       case "POST /auth/password-reset/request": {
         const b = parse(passwordResetRequestSchema);
