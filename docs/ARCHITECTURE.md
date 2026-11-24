@@ -13,6 +13,7 @@ Soul Padel's member app: court bookings and the Soul points loyalty programme, o
 | 5 | **API: Fastify + Drizzle ORM** (default chosen at setup; can be revisited before much code depends on it). | 2026-11-18 |
 | 6 | **Points are called "Soul points" for now** (was "Almas"). The name is provisional: UI copy uses `POINTS_NAME` from `packages/shared`, and code identifiers stay neutral (`points`). | 2026-11-18 |
 | 7 | **Own email + password accounts with bearer-token sessions** (#1): a short-lived access token and a rotating refresh token, no cookies. See [Authentication](#authentication). | 2026-11-18 |
+| 8 | **Guardian consent by email link** (#3): under-18s nominate a parent or guardian, who confirms or declines through a single-use, expiring link. See [Guardian consent](#guardian-consent-under-18s). | 2026-11-18 |
 
 ## Stack
 
@@ -50,7 +51,7 @@ docs/
 
 Issue #1. Contract: [`docs/api/auth.md`](api/auth.md); schemas: `packages/shared/src/auth.ts`.
 
-**Accounts.** `users` has a `role` (`member` by default; `receptionist`, `club_manager`, `admin` for staff) and a `status` (`pending_verification` → `active`). Status is an enum rather than booleans so later states slot in: #3 adds `pending_consent` (plus a date of birth and a guardian-consent record) by extending the enum and changing one function, `statusAfterEmailVerified` in `apps/api/src/auth/service.ts`. Unverified accounts can log in, so the app can show "verify your email" (and later "waiting for guardian consent"); features that need a fully active account check `status === "active"`. `password_hash` is nullable so an Apple/Google-only account can exist later.
+**Accounts.** `users` has a `role` (`member` by default; `receptionist`, `club_manager`, `admin` for staff) and a `status` (`pending_verification` → `active`, or → `pending_consent` → `active` for under-18s, see [Guardian consent](#guardian-consent-under-18s)). Status is an enum rather than booleans so later states slot in. Unverified accounts can log in, so the app can show "verify your email" (and later "waiting for guardian consent"); features that need a fully active account check `status === "active"`. `password_hash` is nullable so an Apple/Google-only account can exist later.
 
 **Passwords.** argon2id (OWASP baseline: 19 MiB, 2 iterations), 10 to 128 characters, no composition rules (NIST SP 800-63B). Login for an unknown email verifies a dummy hash so timing does not reveal registered emails.
 
@@ -72,7 +73,19 @@ Issue #1. Contract: [`docs/api/auth.md`](api/auth.md); schemas: `packages/shared
 
 **Adding Apple / Google sign-in later.** Add an identities table (`provider`, `subject`, `user_id`) and an endpoint that verifies the provider's ID token, finds or creates the user, then calls `AuthService.createSession`, the same function password login uses. Tokens, storage and refresh stay unchanged.
 
-**Known limitations.** Rate-limit counters are per process (move to Postgres or Redis before running several API instances). No breached-password check yet. Email links open the web app; universal / app links into the native apps come later. Native secure storage is wired up but has not been tested on a device yet.
+**Known limitations (auth).** Rate-limit counters are per process (move to Postgres or Redis before running several API instances). No breached-password check yet. Email links open the web app; universal / app links into the native apps come later. Native secure storage is wired up but has not been tested on a device yet.
+
+## Guardian consent (under-18s)
+
+Issue #3. Contract and edge cases: [`docs/api/consent.md`](api/consent.md); schemas: `packages/shared/src/consent.ts` and `age.ts`.
+
+- **Date of birth for everyone** at sign-up. Age is computed on calendar dates (`ageOn`): it goes up on the birthday, a 29 February birthday counts from 1 March in other years, impossible and future dates are rejected. The threshold `ADULT_AGE = 18` is defined once in `packages/shared`. The API uses today's UTC date.
+- **Order:** the member verifies their own email first; only then is the guardian emailed (so sign-up can't be used to email arbitrary addresses). Verification moves an under-18 account to `pending_consent` instead of `active` (`statusAfterEmailVerified`).
+- **Consent link:** single-use, 7 days, token stored as a SHA-256 hash like the other email links; a resend or change of guardian invalidates older links. The guardian reviews (not consuming the link), then confirms (stating they are the parent or legal guardian) or declines.
+- **Decline** keeps the account `pending_consent`; the member can nominate a different guardian but not ask the one who declined again.
+- **Audit:** one `guardian_consent_requests` row per consent email: guardian email, member's date of birth, method (`email_link`), requested/expires/decided times, decision, IP and user agent of the decision, the guardian's statement, superseded time. The foreign key restricts deleting a member with consent records.
+- **One check for member features:** `isAccountFullyActive(status)` (shared) and the `requireActiveAccount` preHandler (API, `403 account_not_active`). Booking and points routes must use it.
+- **Not decided / not built:** the Safeguarding Policy review (placeholder text marks where the policy goes), a staff view of consent records, promotion on the 18th birthday, asking pre-#3 accounts for a date of birth, a club time zone for "today".
 
 ## Testing
 
@@ -89,5 +102,4 @@ Tracked on GitHub with the `needs-decision` label. The main ones are:
 - Cancellation and refund policy (#59)
 - What "Free Play for Life" covers (#16)
 - Players on a booking who have no account (#8, #57)
-- How guardian consent is verified (#3)
 - Who scans at check-in: reception scans the member, or the member scans a club code (#21)

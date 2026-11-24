@@ -1,11 +1,19 @@
 import {
   apiErrorResponseSchema,
   authSessionResponseSchema,
+  consentDecisionResponseSchema,
+  consentReviewResponseSchema,
+  consentStatusResponseSchema,
   meResponseSchema,
   messageResponseSchema,
   verifyEmailResponseSchema,
   type ApiErrorCode,
   type AuthSessionResponse,
+  type ConsentDecisionRequest,
+  type ConsentDecisionResponse,
+  type ConsentRequestRequest,
+  type ConsentReviewResponse,
+  type ConsentStatusResponse,
   type LogInRequest,
   type MeResponse,
   type MessageResponse,
@@ -34,7 +42,7 @@ const NETWORK_ERROR: ClientError = {
   message: "Can't reach Soul Padel right now. Check your connection and try again.",
 };
 
-/** Calls the auth endpoints described in docs/api/auth.md. */
+/** Calls the auth endpoints described in docs/api/auth.md and docs/api/consent.md. */
 export class AuthApi {
   constructor(
     private readonly apiUrl: string | null,
@@ -77,6 +85,32 @@ export class AuthApi {
 
   confirmPasswordReset(body: PasswordResetConfirmRequest) {
     return this.request("/auth/password-reset/confirm", messageResponseSchema, { body });
+  }
+
+  /** The logged-in member's guardian consent status (#3). */
+  consentStatus(accessToken: string) {
+    return this.request("/auth/consent", consentStatusResponseSchema, {
+      method: "GET",
+      accessToken,
+    });
+  }
+
+  /** Resend the consent email, or switch to another guardian (#3). */
+  requestConsent(accessToken: string, body: ConsentRequestRequest = {}) {
+    return this.request("/auth/consent/request", consentStatusResponseSchema, {
+      body,
+      accessToken,
+    });
+  }
+
+  /** What a guardian is asked to consent to; does not use up the link (#3). */
+  reviewConsent(token: string) {
+    return this.request("/auth/consent/review", consentReviewResponseSchema, { body: { token } });
+  }
+
+  /** The guardian's decision; uses up the link (#3). */
+  decideConsent(body: ConsentDecisionRequest) {
+    return this.request("/auth/consent/decision", consentDecisionResponseSchema, { body });
   }
 
   private async request<S extends z.ZodType | null>(
@@ -171,4 +205,12 @@ export function errorMessage(error: ClientError): string {
   return error.message;
 }
 
-export type { AuthSessionResponse, MeResponse, MessageResponse, VerifyEmailResponse };
+export type {
+  AuthSessionResponse,
+  ConsentDecisionResponse,
+  ConsentReviewResponse,
+  ConsentStatusResponse,
+  MeResponse,
+  MessageResponse,
+  VerifyEmailResponse,
+};

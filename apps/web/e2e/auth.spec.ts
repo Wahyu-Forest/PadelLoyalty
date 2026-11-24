@@ -41,6 +41,7 @@ test("sign up, verify the email, log in, stay logged in after a relaunch, log ou
 
   await page.getByLabel("Email").fill(" Ana@Example.com ");
   await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByLabel("Date of birth").fill("1990-04-15"); // #3: required for everyone
   await page.getByRole("button", { name: "Sign up" }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   await expect(page.getByTestId("signup-done")).toContainText(EMAIL);
