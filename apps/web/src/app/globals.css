@@ -315,3 +315,245 @@ button.link {
   gap: 0.5rem;
   justify-items: start;
 }
+
+/* Staff back office (#56): desktop-first, still usable on a phone. */
+
+.page.wide {
+  max-width: 72rem;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.grid-2,
+.grid-3 {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
+
+.row,
+.row-between {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.row-between {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.row > .field {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.row-end {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.field select,
+.hours select,
+.field-label + input,
+.field-label + select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #c4cccc;
+  border-radius: 0.5rem;
+  font: inherit;
+  font-size: max(1rem, 16px);
+  background: #fff;
+  color: var(--fg);
+}
+
+.hours select {
+  width: auto;
+}
+
+.field-label {
+  font-weight: 600;
+}
+
+.fieldset {
+  margin: 0;
+  border: 1px solid #dde3e3;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem 1rem;
+  min-width: 0;
+}
+
+.fieldset legend {
+  font-weight: 700;
+  padding: 0 0.25rem;
+}
+
+.hours {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.hours-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.hours-row .checkbox {
+  min-width: 8.5rem;
+}
+
+.muted-inline,
+.muted-block {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.9rem;
+}
+
+.muted-block {
+  display: block;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.5rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #c4cccc;
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.chip:has(input:checked) {
+  border-color: var(--brand);
+  background: #e7f0ef;
+}
+
+.price-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+}
+
+.table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+th,
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  border-bottom: 1px solid #e3e8e8;
+}
+
+thead th {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #e7f0ef;
+  color: var(--ok);
+}
+
+.badge[data-tone="off"] {
+  background: #eceeee;
+  color: var(--muted);
+}
+
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.court-row {
+  display: grid;
+  gap: 0.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e3e8e8;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 2px solid #dde3e3;
+}
+
+.tab {
+  background: transparent;
+  color: var(--brand);
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  margin-bottom: -2px;
+}
+
+.tab.active {
+  border-bottom-color: var(--brand);
+}
+
+.club-title {
+  font-size: 1.35rem;
+  margin: 0;
+}
+
+.admin-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: center;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.tool-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

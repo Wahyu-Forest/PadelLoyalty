@@ -420,7 +420,8 @@ export class FakeAuthApi {
     });
   }
 
-  private authenticated(headers: Record<string, string>): Account | undefined {
+  /** The logged-in account for a request's bearer token (used by the clubs fake, #56). */
+  authenticated(headers: Record<string, string>): Account | undefined {
     const access = /^Bearer (.+)$/.exec(headers.authorization ?? "")?.[1];
     const session = [...this.sessions.values()].find((s) => s.access === access);
     return session && this.accounts.get(session.email);

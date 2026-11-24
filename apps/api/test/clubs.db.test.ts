@@ -261,7 +261,18 @@ describe("clubs", () => {
       active: true,
       openingHours: WEEK,
     });
-    const list = adminClubListResponseSchema.parse((await call("GET", "/admin/clubs")).json());
+    const listResponse = await call("GET", "/admin/clubs");
+    // Opening hours come back Monday first (jsonb would otherwise reorder the keys).
+    expect(Object.keys(listResponse.json().clubs[0].openingHours)).toEqual([
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri",
+      "sat",
+      "sun",
+    ]);
+    const list = adminClubListResponseSchema.parse(listResponse.json());
     expect(list.clubs).toHaveLength(1);
     expect(list.clubs[0]).toMatchObject({ id: club.id, courtCount: 0, hasPricing: false });
   });
