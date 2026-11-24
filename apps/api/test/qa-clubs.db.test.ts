@@ -7,7 +7,9 @@
  * admin are set with SQL (there is no role API yet); admins are made with the
  * documented hook `promoteToAdmin`.
  */
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import {
   adminClubDetailResponseSchema,
   adminClubListResponseSchema,
@@ -25,6 +27,7 @@ import {
 import type { LightMyRequestResponse } from "fastify";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { promoteToAdmin } from "../src/admin/promote.js";
+import { ClubService } from "../src/clubs/service.js";
 import type { DatabaseConnection } from "../src/db/client.js";
 import {
   MINUTE,
@@ -1519,51 +1522,173 @@ describe("court blocks", () => {
 // ---------------------------------------------------------------------------
 
 describe("promoteToAdmin (first-admin script)", () => {
+  async function roleOf(userId: string) {
+    const r = await connection.pool.query<{ role: string }>(
+      "select role from users where id = $1",
+      [userId],
+    );
+    return r.rows[0]!.role;
+  }
+
   it("promotes a verified member; running it again is harmless", async () => {
     const m = await activeMember(h);
-    await promoteToAdmin(connection.db, m.email);
-    await promoteToAdmin(connection.db, m.email);
+    expect(await promoteToAdmin(connection.db, m.email)).toMatchObject({
+      outcome: "promoted",
+      previousRole: "member",
+    });
+    expect(await promoteToAdmin(connection.db, m.email)).toMatchObject({
+      outcome: "already_admin",
+    });
     const token = (await logIn(h, m.email)).accessToken;
     expectStatus(await call("GET", "/admin/clubs", token), 200);
     const me = await call("GET", "/auth/me", token);
     expect((me.json() as { user: { role: string } }).user.role).toBe("admin");
   });
 
-  it("finds the account ignoring email case", async () => {
+  it("takes effect on the member's existing session at the next request", async () => {
     const m = await activeMember(h);
-    await promoteToAdmin(connection.db, m.email.toUpperCase()).catch(() => undefined);
-    const role = await connection.pool.query<{ role: string }>(
-      "select role from users where id = $1",
-      [m.session.user.id],
-    );
-    expect(role.rows[0]!.role).toBe("admin");
+    expectApiError(await call("GET", "/admin/clubs", m.session.accessToken), 403, "forbidden");
+    await promoteToAdmin(connection.db, m.email);
+    expectStatus(await call("GET", "/admin/clubs", m.session.accessToken), 200);
   });
 
-  it("refuses an unknown email", async () => {
-    await expect(
-      (async () => {
-        const result = (await promoteToAdmin(connection.db, uniqueEmail("nobody"))) as unknown;
-        if (result && typeof result === "object" && "ok" in result && !result.ok) {
-          throw new Error("refused");
-        }
-      })(),
-    ).rejects.toThrow();
+  it("finds the account ignoring email case and surrounding spaces", async () => {
+    const m = await activeMember(h);
+    const result = await promoteToAdmin(connection.db, `  ${m.email.toUpperCase()} `);
+    expect(result.outcome).toBe("promoted");
+    expect(await roleOf(m.session.user.id)).toBe("admin");
+  });
+
+  it("promotes a receptionist or club manager too", async () => {
+    const m = await activeMember(h);
+    await connection.pool.query("update users set role = 'club_manager' where id = $1", [
+      m.session.user.id,
+    ]);
+    expect(await promoteToAdmin(connection.db, m.email)).toMatchObject({
+      outcome: "promoted",
+      previousRole: "club_manager",
+    });
+  });
+
+  it("refuses an unknown email and an invalid one", async () => {
+    expect((await promoteToAdmin(connection.db, uniqueEmail("nobody"))).outcome).toBe("not_found");
+    expect((await promoteToAdmin(connection.db, "not an email")).outcome).toBe("invalid_email");
+    expect((await promoteToAdmin(connection.db, "")).outcome).toBe("invalid_email");
   });
 
   it("refuses an unverified account and leaves it a member", async () => {
     const email = uniqueEmail();
     await signUp(h, email);
-    await (async () => {
-      try {
-        await promoteToAdmin(connection.db, email);
-      } catch {
-        /* refused by throwing */
-      }
-    })();
-    const role = await connection.pool.query<{ role: string }>(
-      "select role from users where lower(email) = lower($1)",
-      [email],
+    const session = await logIn(h, email);
+    expect((await promoteToAdmin(connection.db, email)).outcome).toBe("not_verified");
+    expect(await roleOf(session.user.id)).toBe("member");
+  });
+});
+
+describe("admin:create CLI", () => {
+  const apiDir = fileURLToPath(new URL("..", import.meta.url));
+  function run(...args: string[]) {
+    return spawnSync("pnpm", ["exec", "tsx", "src/admin/create-admin.ts", ...args], {
+      cwd: apiDir,
+      encoding: "utf8",
+      env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL },
+      timeout: 30_000,
+    });
+  }
+
+  it("promotes a verified account (exit 0), is repeatable, and fails clearly otherwise", async () => {
+    const m = await activeMember(h);
+    const first = run(m.email);
+    expect(first.status, first.stderr).toBe(0);
+    expect(first.stdout).toContain("now an admin");
+    const again = run(m.email);
+    expect(again.status, again.stderr).toBe(0);
+    expect(again.stdout).toContain("already an admin");
+
+    const unknown = run(uniqueEmail("nobody"));
+    expect(unknown.status).toBe(1);
+    expect(unknown.stderr).toContain("No account");
+
+    const unverified = uniqueEmail();
+    await signUp(h, unverified);
+    const refused = run(unverified);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("not verified");
+
+    expect(run().status).toBe(2);
+    expect(run("a@example.com", "b@example.com").status).toBe(2);
+  }, 60_000);
+});
+
+describe("blocked slots can't be booked (findBlockingBlocks for #23) and audit fields", () => {
+  it("returns non-cancelled overlapping blocks only, with [start, end) semantics", async () => {
+    const club = await createClub();
+    const court = await createCourt(club.id);
+    const other = await createCourt(club.id);
+    const created = courtBlockListResponseSchema.parse(
+      expectStatus(
+        await createBlocks(club.id, {
+          courtIds: [court.id],
+          startsLocal: "2030-12-12T09:00",
+          endsLocal: "2030-12-12T11:00",
+        }),
+        201,
+      ).json(),
+    ).blocks;
+    const service = new ClubService(connection.db);
+    const at = (t: string) => new Date(`2030-12-12T${t}:00.000Z`);
+    const blocking = (from: string, to: string, courtId = court.id) =>
+      service.findBlockingBlocks(courtId, at(from), at(to));
+
+    expect(await blocking("09:00", "10:00")).toHaveLength(1);
+    expect(await blocking("10:30", "12:00")).toHaveLength(1);
+    expect(await blocking("08:00", "12:00")).toHaveLength(1);
+    expect(await blocking("08:00", "09:00")).toHaveLength(0);
+    expect(await blocking("11:00", "12:00")).toHaveLength(0);
+    expect(await blocking("09:00", "10:00", other.id)).toHaveLength(0);
+
+    expectStatus(
+      await call("DELETE", `/admin/clubs/${club.id}/blocks/${created[0]!.id}`, admin),
+      204,
     );
-    expect(role.rows[0]!.role).toBe("member");
+    expect(await blocking("09:00", "10:00")).toHaveLength(0);
+  });
+
+  it("records who created and who cancelled a block", async () => {
+    const me = (await call("GET", "/auth/me", admin)).json() as { user: { id: string } };
+    const club = await createClub();
+    const court = await createCourt(club.id);
+    const [block] = courtBlockListResponseSchema.parse(
+      (
+        await createBlocks(club.id, {
+          courtIds: [court.id],
+          startsLocal: "2030-12-12T09:00",
+          endsLocal: "2030-12-12T10:00",
+        })
+      ).json(),
+    ).blocks;
+    const second = await adminToken();
+    expectStatus(await call("DELETE", `/admin/clubs/${club.id}/blocks/${block!.id}`, second), 204);
+    const secondId = ((await call("GET", "/auth/me", second)).json() as { user: { id: string } })
+      .user.id;
+    const row = await connection.pool.query<{
+      created_by_user_id: string;
+      cancelled_by_user_id: string;
+    }>("select created_by_user_id, cancelled_by_user_id from court_blocks where id = $1", [
+      block!.id,
+    ]);
+    expect(row.rows[0]).toEqual({ created_by_user_id: me.user.id, cancelled_by_user_id: secondId });
+  });
+
+  it("the database refuses a block that ends before it starts", async () => {
+    const club = await createClub();
+    const court = await createCourt(club.id);
+    await expect(
+      connection.pool.query(
+        `insert into court_blocks (club_id, court_id, starts_at, ends_at, reason)
+         values ($1, $2, '2030-01-01T10:00Z', '2030-01-01T09:00Z', 'maintenance')`,
+        [club.id, court.id],
+      ),
+    ).rejects.toThrow();
   });
 });
