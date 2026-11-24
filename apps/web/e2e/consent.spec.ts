@@ -187,3 +187,34 @@ test("an invalid or incomplete consent link explains what to do", async ({ page 
   await page.goto("guardian-consent/");
   await expect(page.getByTestId("form-error")).toContainText(/incomplete/i);
 });
+
+// Regression (found by Quan's qa-consent.spec): the review used to be cached per
+// token, so reopening a used link in the same tab showed the form again.
+test("reopening a link after deciding, in the same tab, shows it is no longer valid", async ({
+  page,
+}) => {
+  pendingMinor();
+  const link = api.linkPath(MUM, "guardian_consent");
+  await page.goto(link);
+  await page.getByLabel("I am this member's parent or legal guardian").check();
+  await page.getByRole("button", { name: "Give consent" }).click();
+  await expect(page.getByTestId("consent-done")).toBeVisible();
+
+  await page.goto(link);
+  await expect(page.getByTestId("form-error")).toContainText(/invalid|expired|used/i);
+  await expect(page.getByRole("button", { name: "Give consent" })).toHaveCount(0);
+});
+
+// Regression (found by Quan's qa-consent.spec): the page showed the server's
+// message as-is, so a decline did not say "declined" if the wording differed.
+test("the page says what the guardian decided, whatever the server's wording", async ({ page }) => {
+  pendingMinor();
+  await page.goto(api.linkPath(MUM, "guardian_consent"));
+  await expect(page.getByTestId("consent-details")).toBeVisible();
+  api.overrides.set("/auth/consent/decision", {
+    status: 200,
+    body: { message: "Thank you", decision: "decline" },
+  });
+  await page.getByRole("button", { name: "Decline" }).click();
+  await expect(page.getByTestId("consent-done")).toContainText("You've declined");
+});
