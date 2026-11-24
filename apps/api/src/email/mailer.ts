@@ -3,7 +3,7 @@
  * then development logs emails and tests capture them.
  */
 
-export type EmailType = "verify_email" | "password_reset" | "account_exists";
+export type EmailType = "verify_email" | "password_reset" | "account_exists" | "guardian_consent";
 
 export interface EmailMessage {
   to: string;

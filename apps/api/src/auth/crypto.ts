@@ -41,6 +41,7 @@ export const TOKEN_PREFIX = {
   access: "pla_",
   refresh: "plr_",
   email: "ple_",
+  consent: "plc_",
 } as const;
 
 /** 256 bits of randomness, base64url, with a type prefix. */

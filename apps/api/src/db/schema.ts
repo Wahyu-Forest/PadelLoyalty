@@ -1,6 +1,16 @@
 import { ACCOUNT_STATUSES, USER_ROLES } from "@padelloyalty/shared";
 import { sql } from "drizzle-orm";
-import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  date,
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 /**
  * Placeholder table created by the first migration, proving the migration
@@ -39,6 +49,13 @@ export const users = pgTable(
     role: userRole().notNull().default("member"),
     status: accountStatus().notNull().default("pending_verification"),
     emailVerifiedAt: timestamp({ withTimezone: true }),
+    /**
+     * `YYYY-MM-DD` (#3). Null only for accounts created before date of birth
+     * was captured; those are treated as not needing guardian consent.
+     */
+    dateOfBirth: date({ mode: "string" }),
+    /** The parent or guardian currently nominated for consent (under-18s only, #3). */
+    guardianEmail: text(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
@@ -113,5 +130,58 @@ export const emailTokens = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// Guardian consent (#3). See docs/api/consent.md.
+// ---------------------------------------------------------------------------
+
+export const consentRequestStatus = pgEnum("consent_request_status", [
+  "pending",
+  "confirmed",
+  "declined",
+  /** Replaced by a newer request (resend or guardian change) before a decision. */
+  "superseded",
+]);
+
+/** How consent was collected. Only `email_link` today. */
+export const consentMethod = pgEnum("consent_method", ["email_link"]);
+
+/**
+ * One row per consent email sent to a guardian: the audit record of who was
+ * asked, when, and what they decided, from where. Never deleted by the flow;
+ * the foreign key restricts deleting a member who has consent records.
+ */
+export const guardianConsentRequests = pgTable(
+  "guardian_consent_requests",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    guardianEmail: text().notNull(),
+    memberDateOfBirth: date({ mode: "string" }).notNull(),
+    method: consentMethod().notNull().default("email_link"),
+    status: consentRequestStatus().notNull().default("pending"),
+    /** SHA-256 of the link token; the token itself is never stored. */
+    tokenHash: text().notNull(),
+    requestedAt: timestamp({ withTimezone: true }).notNull(),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    decidedAt: timestamp({ withTimezone: true }),
+    decidedIp: text(),
+    decidedUserAgent: text(),
+    /** The guardian stated they are the member's parent or legal guardian (required to confirm). */
+    guardianAttested: boolean().notNull().default(false),
+    supersededAt: timestamp({ withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("guardian_consent_requests_token_hash_unique").on(table.tokenHash),
+    // At most one live request per member, even if two sends race.
+    uniqueIndex("guardian_consent_requests_one_pending")
+      .on(table.userId)
+      .where(sql`${table.status} = 'pending'`),
+    index("guardian_consent_requests_user_id_idx").on(table.userId, table.requestedAt),
+  ],
+);
+
 export type UserRow = typeof users.$inferSelect;
+export type GuardianConsentRequestRow = typeof guardianConsentRequests.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;

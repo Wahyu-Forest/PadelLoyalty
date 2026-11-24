@@ -18,6 +18,8 @@ export const RATE_LIMIT_RULE_NAMES = [
   "emailRequestsPerIp",
   "emailRequestsPerEmail",
   "tokenAttemptsPerIp",
+  "consentRequestsPerAccount",
+  "consentEmailsPerGuardian",
 ] as const;
 export type RateLimitRuleName = (typeof RATE_LIMIT_RULE_NAMES)[number];
 export type RateLimitRules = Record<RateLimitRuleName, RateLimitRule>;
@@ -32,6 +34,9 @@ export const DEFAULT_RATE_LIMITS: RateLimitRules = {
   emailRequestsPerIp: { max: 20, windowMs: HOUR },
   emailRequestsPerEmail: { max: 3, windowMs: HOUR },
   tokenAttemptsPerIp: { max: 20, windowMs: 15 * MINUTE },
+  // Guardian consent (#3): resend / change guardian per member, and emails to one guardian.
+  consentRequestsPerAccount: { max: 5, windowMs: HOUR },
+  consentEmailsPerGuardian: { max: 5, windowMs: HOUR },
 };
 
 interface Window {

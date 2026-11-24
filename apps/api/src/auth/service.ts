@@ -1,13 +1,17 @@
 import {
   LOYALTY_PROGRAMME_NAME,
+  needsGuardianConsent,
   type AccountStatus,
   type AuthSessionResponse,
   type AuthUser,
+  type CalendarDate,
+  type SignUpRequest,
 } from "@padelloyalty/shared";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { emailTokens, rotatedRefreshTokens, sessions, users, type UserRow } from "../db/schema.js";
 import type { Mailer } from "../email/mailer.js";
+import type { ConsentService } from "./consent-service.js";
 import { ApiError, rateLimited } from "../http/errors.js";
 import {
   generateToken,
@@ -40,15 +44,24 @@ export const MESSAGES = {
     "If this email belongs to an account, we've sent a link to reset the password.",
   passwordReset: "Your password has been changed. Please log in with your new password.",
   emailVerified: "Your email is verified.",
+  emailVerifiedPendingConsent:
+    "Your email is verified. We've emailed your parent or guardian to ask for their consent.",
 } as const;
 
 /**
- * The status an account moves to once its email is verified. This is the hook
- * for later lifecycle rules: e.g. #3 returns `pending_consent` for an
- * under-18 member who has no guardian consent yet.
+ * The status an account moves to once its email is verified: `active`, or
+ * `pending_consent` for a member who is under 18 on `today` (#3). Accounts
+ * without a date of birth (created before #3) count as adults.
  */
-export function statusAfterEmailVerified(user: Pick<UserRow, "status">): AccountStatus {
-  return user.status === "pending_verification" ? "active" : user.status;
+export function statusAfterEmailVerified(
+  user: Pick<UserRow, "status" | "dateOfBirth">,
+  today: CalendarDate,
+): AccountStatus {
+  if (user.status !== "pending_verification") return user.status;
+  if (user.dateOfBirth !== null && needsGuardianConsent(user.dateOfBirth, today)) {
+    return "pending_consent";
+  }
+  return "active";
 }
 
 export function toAuthUser(user: UserRow): AuthUser {
@@ -69,6 +82,7 @@ export interface AuthServiceOptions {
   appUrl: string;
   limiter: RateLimiter;
   now: () => Date;
+  consent: ConsentService;
 }
 
 export interface RequestContext {
@@ -94,8 +108,10 @@ export class AuthService {
   private readonly appUrl: string;
   private readonly limiter: RateLimiter;
   private readonly now: () => Date;
+  readonly consent: ConsentService;
 
   constructor(options: AuthServiceOptions) {
+    this.consent = options.consent;
     this.db = options.db;
     this.mailer = options.mailer;
     this.appUrl = options.appUrl.replace(/\/+$/, "");
@@ -107,8 +123,13 @@ export class AuthService {
   // Sign-up and email verification
   // -------------------------------------------------------------------------
 
-  async signUp(email: string, password: string, context: RequestContext): Promise<void> {
+  async signUp(request: SignUpRequest, context: RequestContext): Promise<void> {
+    const { email, password, dateOfBirth } = request;
     this.consume("signupPerIp", context.ip);
+    // Only under-18s have a guardian; an adult's guardianEmail is ignored.
+    const guardianEmail = needsGuardianConsent(dateOfBirth, this.consent.today())
+      ? (request.guardianEmail ?? null)
+      : null;
     // Hash before looking the email up so both branches take about as long.
     const passwordHash = await hashPassword(password);
 
@@ -121,7 +142,7 @@ export class AuthService {
     const now = this.now();
     const inserted = await this.db
       .insert(users)
-      .values({ email, passwordHash, createdAt: now, updatedAt: now })
+      .values({ email, passwordHash, dateOfBirth, guardianEmail, createdAt: now, updatedAt: now })
       .onConflictDoNothing()
       .returning();
     const user = inserted[0];
@@ -168,18 +189,20 @@ export class AuthService {
 
   async verifyEmail(token: string, context: RequestContext): Promise<AccountStatus> {
     this.consume("tokenAttemptsPerIp", context.ip);
-    return this.db.transaction(async (tx) => {
+    const { userId, status, needsConsentEmail } = await this.db.transaction(async (tx) => {
       const userId = await this.consumeEmailToken(tx, token, "verify_email");
       if (!userId) throw invalidLinkToken();
       const user = await this.lockUser(tx, userId);
       const now = this.now();
-      const status = statusAfterEmailVerified(user);
+      const status = statusAfterEmailVerified(user, this.consent.today());
       await tx
         .update(users)
         .set({ emailVerifiedAt: user.emailVerifiedAt ?? now, status, updatedAt: now })
         .where(eq(users.id, user.id));
-      return status;
+      return { userId, status, needsConsentEmail: becamePendingConsent(user.status, status) };
     });
+    if (needsConsentEmail) await this.consent.sendFirstRequest(userId);
+    return status;
   }
 
   private async sendVerificationEmail(user: UserRow): Promise<void> {
@@ -383,18 +406,19 @@ export class AuthService {
   ): Promise<void> {
     this.consume("tokenAttemptsPerIp", context.ip);
     const passwordHash = await hashPassword(password);
-    await this.db.transaction(async (tx) => {
+    const { userId, needsConsentEmail } = await this.db.transaction(async (tx) => {
       const userId = await this.consumeEmailToken(tx, token, "password_reset");
       if (!userId) throw invalidLinkToken();
       const user = await this.lockUser(tx, userId);
       const now = this.now();
+      const status = statusAfterEmailVerified(user, this.consent.today());
       await tx
         .update(users)
         .set({
           passwordHash,
           // Following the emailed link proves the user owns the address.
           emailVerifiedAt: user.emailVerifiedAt ?? now,
-          status: statusAfterEmailVerified(user),
+          status,
           updatedAt: now,
         })
         .where(eq(users.id, user.id));
@@ -414,7 +438,9 @@ export class AuthService {
             isNull(emailTokens.consumedAt),
           ),
         );
+      return { userId, needsConsentEmail: becamePendingConsent(user.status, status) };
     });
+    if (needsConsentEmail) await this.consent.sendFirstRequest(userId);
   }
 
   // -------------------------------------------------------------------------
@@ -519,6 +545,11 @@ export class AuthService {
       refreshTokenExpiresAt: tokens.refreshTokenExpiresAt.toISOString(),
     };
   }
+}
+
+/** True when verifying the email just moved an under-18 account to `pending_consent`. */
+function becamePendingConsent(before: AccountStatus, after: AccountStatus): boolean {
+  return before === "pending_verification" && after === "pending_consent";
 }
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
