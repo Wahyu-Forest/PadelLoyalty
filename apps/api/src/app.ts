@@ -4,6 +4,8 @@ import { RateLimiter, type RateLimitRules } from "./auth/rate-limit.js";
 import { ConsentService } from "./auth/consent-service.js";
 import { authRoutes } from "./auth/routes.js";
 import { AuthService } from "./auth/service.js";
+import { clubRoutes } from "./clubs/routes.js";
+import { ClubService } from "./clubs/service.js";
 import type { Database } from "./db/client.js";
 import type { Mailer } from "./email/mailer.js";
 import { registerErrorHandling } from "./http/errors.js";
@@ -26,7 +28,7 @@ export interface AppOptions {
   logger?: FastifyServerOptions["logger"];
   /** Trust X-Forwarded-For from a reverse proxy (for per-IP rate limits). */
   trustProxy?: boolean;
-  /** Auth routes are registered only when given. */
+  /** Auth routes, and the club routes that need them (#56), are registered only when given. */
   auth?: AuthOptions;
 }
 
@@ -36,6 +38,8 @@ export async function buildApp(options: AppOptions) {
   registerErrorHandling(app);
   await app.register(cors, {
     origin: options.corsOrigins,
+    // The plugin allows only GET, HEAD and POST by default; club setup (#56) also uses these.
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
     // Clients show "try again in N seconds" on 429.
     exposedHeaders: ["retry-after"],
   });
@@ -53,6 +57,9 @@ export async function buildApp(options: AppOptions) {
     const service = new AuthService({ ...shared, consent: new ConsentService(shared) });
     app.decorate("authService", service);
     await app.register(authRoutes, { service });
+    const clubs = new ClubService(options.auth.db, now);
+    app.decorate("clubService", clubs);
+    await app.register(clubRoutes, { clubs, auth: service });
   }
 
   return app;
@@ -62,5 +69,7 @@ declare module "fastify" {
   interface FastifyInstance {
     /** Present when the app was built with `auth`. Use with `requireAuth(app.authService)`. */
     authService?: AuthService;
+    /** Present when the app was built with `auth`. Booking (#23) uses `findBlockingBlocks`. */
+    clubService?: ClubService;
   }
 }

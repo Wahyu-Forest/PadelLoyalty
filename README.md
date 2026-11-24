@@ -63,11 +63,23 @@ pnpm dev
 
 Pages: `/signup/`, `/login/`, `/verify-email/`, `/forgot-password/`, `/reset-password/`, `/guardian-consent/`; the member home shows the logged-in state and a log-out button. Sign-up asks for a date of birth; under-18s also give a parent or guardian's email, and after verifying their own email the account waits for the guardian to confirm through the emailed link (see [`docs/api/consent.md`](docs/api/consent.md)). There is no email provider yet: the API **prints each email, with its link, to its console**. Open the link in the browser to verify an email or reset a password. The API endpoints are documented in [`docs/api/auth.md`](docs/api/auth.md) and the design in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#authentication).
 
-To make a staff account for testing, sign up, then set the role in the database:
+### Staff back office and the first admin
+
+`/admin/` is the staff back office. It is gated by role: logged-out visitors are asked to log in,
+members see "No access", and only admins can use **Clubs and courts** (`/admin/clubs/`): clubs,
+opening hours, IANA time zone and currency, courts (indoor/outdoor, deactivate), slot lengths,
+standard and peak prices, and court blocks. The API enforces the same rules; see
+[`docs/api/clubs.md`](docs/api/clubs.md).
+
+To create the first admin, sign up in the app, open the verification link, then promote the account
+(it uses `DATABASE_URL` from `apps/api/.env`):
 
 ```bash
-psql "$DATABASE_URL" -c "update users set role = 'admin' where email = 'you@example.com';"
+pnpm --filter @padelloyalty/api admin:create you@example.com
 ```
+
+It only promotes an existing account with a verified email, and running it again is harmless. Other
+staff roles (`receptionist`, `club_manager`) have no tool yet; set them in the database if needed.
 
 Both pages call the API's `GET /health` and show whether the API and the database are up.
 

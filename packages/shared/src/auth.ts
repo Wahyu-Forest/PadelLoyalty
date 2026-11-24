@@ -261,9 +261,17 @@ export const API_ERROR_CODES = [
   "consent_not_required",
   /** 409 from the consent request endpoint: this guardian already declined; nominate another. */
   "guardian_declined",
+  /** 403: logged in, but this role may not do that (e.g. a member calling /admin endpoints, #56). */
+  "forbidden",
+  /** 409 (#56): another club already has this name. */
+  "club_name_taken",
+  /** 409 (#56): another court of this club already has this name. */
+  "court_name_taken",
+  /** 409 (#56): the club has prices in its current currency; remove the prices before changing currency. */
+  "currency_locked",
   /** 429: too many attempts; see the `Retry-After` header (seconds). */
   "rate_limited",
-  /** 404: unknown route. */
+  /** 404: unknown route, or unknown (or out of scope) club, court or block. */
   "not_found",
   /** 500: unexpected error. */
   "internal_error",

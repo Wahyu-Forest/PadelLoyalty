@@ -1,13 +1,25 @@
-import { ACCOUNT_STATUSES, USER_ROLES } from "@padelloyalty/shared";
+import {
+  ACCOUNT_STATUSES,
+  COURT_BLOCK_REASONS,
+  COURT_ENVIRONMENTS,
+  DEFAULT_CURRENCY,
+  USER_ROLES,
+  type ClubPricing,
+  type OpeningHours,
+} from "@padelloyalty/shared";
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
+  foreignKey,
   index,
+  jsonb,
   pgEnum,
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -181,6 +193,100 @@ export const guardianConsentRequests = pgTable(
     index("guardian_consent_requests_user_id_idx").on(table.userId, table.requestedAt),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Clubs, courts, pricing and court blocks (#56). See docs/api/clubs.md.
+// ---------------------------------------------------------------------------
+
+/**
+ * A Soul Padel club. Opening hours and pricing are JSON documents validated
+ * by the shared Zod schemas (`openingHoursSchema`, `clubPricingSchema`) before
+ * they are written; both are wall-clock times in `time_zone`. Clubs are never
+ * deleted: `active = false` hides them from members.
+ */
+export const clubs = pgTable(
+  "clubs",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    name: text().notNull(),
+    address: text().notNull(),
+    /** IANA time zone, e.g. `Europe/London`. */
+    timeZone: text().notNull(),
+    /** ISO 4217 code; every amount of this club is in its minor unit. */
+    currency: text().notNull().default(DEFAULT_CURRENCY),
+    openingHours: jsonb().$type<OpeningHours>().notNull(),
+    /** Slot lengths, standard prices and peak bands. Null until set up (not bookable). */
+    pricing: jsonb().$type<ClubPricing>(),
+    active: boolean().notNull().default(true),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("clubs_name_unique").on(sql`lower(${table.name})`),
+    check("clubs_currency_iso", sql`${table.currency} ~ '^[A-Z]{3}$'`),
+  ],
+);
+
+export const courtEnvironment = pgEnum("court_environment", COURT_ENVIRONMENTS);
+
+/** A court of a club. Never deleted (bookings and blocks refer to it): deactivate instead. */
+export const courts = pgTable(
+  "courts",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    clubId: uuid()
+      .notNull()
+      .references(() => clubs.id, { onDelete: "restrict" }),
+    name: text().notNull(),
+    environment: courtEnvironment().notNull(),
+    active: boolean().notNull().default(true),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("courts_club_name_unique").on(table.clubId, sql`lower(${table.name})`),
+    // Target of the (club_id, court_id) foreign keys, so a block can't point at another club's court.
+    unique("courts_club_id_id_unique").on(table.clubId, table.id),
+  ],
+);
+
+export const courtBlockReason = pgEnum("court_block_reason", COURT_BLOCK_REASONS);
+
+/**
+ * A period when a court can't be booked (maintenance, events). Instants in
+ * UTC; the club's time zone gives the wall-clock times. Cancelling sets
+ * `cancelled_at` instead of deleting, so the record stays.
+ */
+export const courtBlocks = pgTable(
+  "court_blocks",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    clubId: uuid().notNull(),
+    courtId: uuid().notNull(),
+    startsAt: timestamp({ withTimezone: true }).notNull(),
+    endsAt: timestamp({ withTimezone: true }).notNull(),
+    reason: courtBlockReason().notNull(),
+    note: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    createdByUserId: uuid().references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp({ withTimezone: true }),
+    cancelledByUserId: uuid().references(() => users.id, { onDelete: "set null" }),
+  },
+  (table) => [
+    foreignKey({
+      name: "court_blocks_club_court_fk",
+      columns: [table.clubId, table.courtId],
+      foreignColumns: [courts.clubId, courts.id],
+    }).onDelete("restrict"),
+    check("court_blocks_ends_after_starts", sql`${table.endsAt} > ${table.startsAt}`),
+    index("court_blocks_court_time_idx").on(table.courtId, table.startsAt),
+    index("court_blocks_club_time_idx").on(table.clubId, table.startsAt),
+  ],
+);
+
+export type ClubRow = typeof clubs.$inferSelect;
+export type CourtRow = typeof courts.$inferSelect;
+export type CourtBlockRow = typeof courtBlocks.$inferSelect;
 
 export type UserRow = typeof users.$inferSelect;
 export type GuardianConsentRequestRow = typeof guardianConsentRequests.$inferSelect;
