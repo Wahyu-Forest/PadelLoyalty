@@ -1,13 +1,20 @@
 import {
+  consentDecisionRequestSchema,
+  consentRequestRequestSchema,
+  consentReviewRequestSchema,
+  isAccountFullyActive,
   logInRequestSchema,
   logOutRequestSchema,
   passwordResetConfirmRequestSchema,
   passwordResetRequestSchema,
   refreshRequestSchema,
   resendVerificationRequestSchema,
-  signUpRequestSchema,
+  signUpRequestSchemaOn,
   verifyEmailRequestSchema,
   type AuthSessionResponse,
+  type ConsentDecisionResponse,
+  type ConsentReviewResponse,
+  type ConsentStatusResponse,
   type MeResponse,
   type MessageResponse,
   type VerifyEmailResponse,
@@ -38,12 +45,44 @@ const unauthorized = () => new ApiError(401, "unauthorized", "You need to log in
  */
 export function requireAuth(service: AuthService): preHandlerAsyncHookHandler {
   return async (request) => {
-    const header = request.headers.authorization ?? "";
-    const match = /^Bearer\s+(\S+)\s*$/i.exec(header);
-    if (!match?.[1]) throw unauthorized();
-    const session = await service.authenticate(match[1]);
-    if (!session) throw unauthorized();
-    request.auth = session;
+    request.auth = await authenticateRequest(service, request);
+  };
+}
+
+async function authenticateRequest(
+  service: AuthService,
+  request: FastifyRequest,
+): Promise<AuthenticatedSession> {
+  const header = request.headers.authorization ?? "";
+  const match = /^Bearer\s+(\S+)\s*$/i.exec(header);
+  if (!match?.[1]) throw unauthorized();
+  const session = await service.authenticate(match[1]);
+  if (!session) throw unauthorized();
+  return session;
+}
+
+const notActiveMessages = {
+  pending_verification: "Verify your email to start using Soul Padel.",
+  pending_consent:
+    "Your account is waiting for your parent or guardian's consent. You can use Soul Padel once they confirm.",
+} as const;
+
+/**
+ * preHandler for member features (booking, earning points, ...) that need a
+ * fully active account (#3). Authenticates like `requireAuth`, then answers
+ * `403 account_not_active` unless `isAccountFullyActive(user.status)`.
+ */
+export function requireActiveAccount(service: AuthService): preHandlerAsyncHookHandler {
+  return async (request) => {
+    request.auth = await authenticateRequest(service, request);
+    const { status } = request.auth.user;
+    if (!isAccountFullyActive(status)) {
+      throw new ApiError(
+        403,
+        "account_not_active",
+        status === "active" ? "Your account is not active." : notActiveMessages[status],
+      );
+    }
   };
 }
 
@@ -52,8 +91,8 @@ export const authRoutes: FastifyPluginAsync<{ service: AuthService }> = async (
   { service },
 ) => {
   app.post("/auth/signup", async (request, reply) => {
-    const { email, password } = parseBody(signUpRequestSchema, request.body);
-    await service.signUp(email, password, context(request));
+    const signUp = parseBody(signUpRequestSchemaOn(service.consent.today()), request.body);
+    await service.signUp(signUp, context(request));
     const body: MessageResponse = { message: MESSAGES.signUp };
     return reply.code(202).send(body);
   });
@@ -61,7 +100,13 @@ export const authRoutes: FastifyPluginAsync<{ service: AuthService }> = async (
   app.post("/auth/verify-email", async (request) => {
     const { token } = parseBody(verifyEmailRequestSchema, request.body);
     const accountStatus = await service.verifyEmail(token, context(request));
-    const body: VerifyEmailResponse = { message: MESSAGES.emailVerified, accountStatus };
+    const body: VerifyEmailResponse = {
+      message:
+        accountStatus === "pending_consent"
+          ? MESSAGES.emailVerifiedPendingConsent
+          : MESSAGES.emailVerified,
+      accountStatus,
+    };
     return body;
   });
 
@@ -107,6 +152,41 @@ export const authRoutes: FastifyPluginAsync<{ service: AuthService }> = async (
     const { token, password } = parseBody(passwordResetConfirmRequestSchema, request.body);
     await service.confirmPasswordReset(token, password, context(request));
     const body: MessageResponse = { message: MESSAGES.passwordReset };
+    return body;
+  });
+
+  // Guardian consent (#3), see docs/api/consent.md.
+
+  app.get("/auth/consent", { preHandler: requireAuth(service) }, async (request) => {
+    if (!request.auth) throw unauthorized();
+    const body: ConsentStatusResponse = await service.consent.status(request.auth.user);
+    return body;
+  });
+
+  app.post("/auth/consent/request", { preHandler: requireAuth(service) }, async (request) => {
+    if (!request.auth) throw unauthorized();
+    const { guardianEmail } = parseBody(consentRequestRequestSchema, request.body);
+    const body: ConsentStatusResponse = await service.consent.request(
+      request.auth.user,
+      guardianEmail,
+      context(request),
+    );
+    return body;
+  });
+
+  app.post("/auth/consent/review", async (request) => {
+    const { token } = parseBody(consentReviewRequestSchema, request.body);
+    const body: ConsentReviewResponse = await service.consent.review(token, context(request));
+    return body;
+  });
+
+  app.post("/auth/consent/decision", async (request) => {
+    const { token, decision } = parseBody(consentDecisionRequestSchema, request.body);
+    const body: ConsentDecisionResponse = await service.consent.decide(
+      token,
+      decision,
+      context(request),
+    );
     return body;
   });
 };

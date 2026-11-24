@@ -22,6 +22,13 @@
       "when": 1795015506436,
       "tag": "0002_rotated_refresh_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795501721361,
+      "tag": "0003_guardian_consent",
+      "breakpoints": true
     }
   ]
 }

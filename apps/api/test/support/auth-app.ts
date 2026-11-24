@@ -15,6 +15,19 @@ import { maskPassword, requireTestDatabaseUrl } from "./test-env.js";
 
 export const APP_URL = "http://app.test/base";
 export const PASSWORD = "correct horse battery";
+/** An adult's date of birth. Sign-up requires one since #3. */
+export const ADULT_DOB = "1990-04-15";
+
+/**
+ * Sign-up needs a date of birth since #3. The #1 tests predate it, so a
+ * sign-up body without `dateOfBirth` gets an adult one (bodies that are not
+ * plain objects are sent as they are).
+ */
+export function withAdultDob(url: string, payload: unknown): unknown {
+  if (url !== "/auth/signup" || payload === null || typeof payload !== "object") return payload;
+  if (Array.isArray(payload) || "dateOfBirth" in payload) return payload;
+  return { dateOfBirth: ADULT_DOB, ...payload };
+}
 
 /** Connects to TEST_DATABASE_URL and applies migrations. */
 export async function connectTestDatabase(): Promise<DatabaseConnection> {
@@ -56,7 +69,7 @@ export async function buildAuthApp(
   });
 
   const post = (url: string, payload: unknown, headers: Record<string, string> = {}) =>
-    app.inject({ method: "POST", url, payload: payload as object, headers });
+    app.inject({ method: "POST", url, payload: withAdultDob(url, payload) as object, headers });
 
   const me = (accessToken: string) =>
     app.inject({

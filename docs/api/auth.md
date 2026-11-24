@@ -1,6 +1,8 @@
 # Auth API (issue #1)
 
 Email + password accounts, email verification, password reset and token sessions.
+Under-18 guardian consent (#3), including the date of birth now required at sign-up, is in
+[`consent.md`](consent.md).
 The Zod schemas in [`packages/shared/src/auth.ts`](../../packages/shared/src/auth.ts) are the
 source of truth for every request and response shape below. The design rationale is in
 [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md#authentication).
@@ -31,6 +33,8 @@ source of truth for every request and response shape below. The design rationale
 
 Creates a member account (`role: "member"`, `status: "pending_verification"`) and emails a
 verification link. Password rules: 10 to 128 characters, no composition rules.
+Body `{ email, password, dateOfBirth, guardianEmail? }`: `dateOfBirth` (`YYYY-MM-DD`) is required
+for everyone, and `guardianEmail` for members under 18 (#3, see [`consent.md`](consent.md)).
 
 **No account enumeration:** the response is the same `202` and message whether or not the email
 is already registered. If it is, no account is created; instead that address receives either a
@@ -40,7 +44,8 @@ pointing to log in / reset password. Sign-up does not log the user in.
 ### `POST /auth/verify-email`
 
 Body `{ token }` from the verification link. Marks the email verified and moves the account
-from `pending_verification` to `active`. Returns `{ message, accountStatus }`.
+from `pending_verification` to `active`, or to `pending_consent` for an under-18 member (whose
+guardian is then emailed, see [`consent.md`](consent.md)). Returns `{ message, accountStatus }`.
 The token is single-use and expires after **24 hours**. Unknown, used or expired tokens:
 `400 invalid_token`. Requesting a new link invalidates older unused ones.
 
@@ -66,7 +71,8 @@ Body `{ email, password }`. Returns a session:
 - Unknown email and wrong password give the **same** `401 invalid_credentials` response
   (and similar timing: a dummy hash is verified for unknown emails).
 - Unverified accounts **can** log in; `user.status` is `pending_verification` and the app asks
-  them to verify. Features that need a fully active account check `status === "active"`.
+  them to verify. `pending_consent` accounts (#3) can log in too. Features that need a fully
+  active account use `requireActiveAccount` (`403 account_not_active`), see [`consent.md`](consent.md).
 - Access token lifetime: **15 minutes**. Refresh token: **30 days**, renewed on every refresh.
 
 ### `POST /auth/refresh`
@@ -120,7 +126,10 @@ answers `429 rate_limited` with a `Retry-After` header (seconds). Defaults:
 | `signupPerIp`           | `POST /auth/signup` from one IP                                 | 10 per hour       |
 | `emailRequestsPerIp`    | resend verification + reset request, from one IP                | 20 per hour       |
 | `emailRequestsPerEmail` | resend verification + reset request, per email (known or not)   | 3 per hour        |
-| `tokenAttemptsPerIp`    | verify-email + reset confirm, from one IP                       | 20 per 15 minutes |
+| `tokenAttemptsPerIp`    | verify-email + reset confirm (+ consent review and decision), from one IP | 20 per 15 minutes |
+
+Guardian consent adds `consentRequestsPerAccount` and `consentEmailsPerGuardian`; see
+[`consent.md`](consent.md#rate-limits-added).
 
 Limits are counted for unknown emails exactly as for registered ones, so a `429` never reveals
 whether an email is registered.
@@ -129,7 +138,8 @@ whether an email is registered.
 
 - `role`: `member` (default), `receptionist`, `club_manager`, `admin`. Only `member` is created
   through the API today; staff roles are assigned by later issues.
-- `status`: `pending_verification` → `active`. Issue #3 adds `pending_consent` for under-18s.
+- `status`: `pending_verification` → `active`, or `pending_verification` → `pending_consent` →
+  `active` for under-18s (#3). Only `active` is fully active (`isAccountFullyActive`).
 
 ## Testing hooks (API)
 
@@ -154,7 +164,8 @@ const app = await buildApp({
 ```
 
 - `mailer.messages` is every email sent, in order: `{ to, type, subject, text, link }` where
-  `type` is `"verify_email" | "password_reset" | "account_exists"` and `link` is the full URL.
+  `type` is `"verify_email" | "password_reset" | "account_exists" | "guardian_consent"` and
+  `link` is the full URL.
 - `mailer.lastTo(email, type?)` returns the latest email to that address; `mailer.clear()` empties it.
 - `tokenFromLink(link)` (same module) extracts the token from a link's `#token=` fragment.
 - Rate limiter state lives in the app instance: a new `buildApp` starts with clean counters.

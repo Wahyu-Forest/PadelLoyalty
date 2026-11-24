@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  EARLIEST_DATE_OF_BIRTH,
+  isValidCalendarDate,
+  needsGuardianConsent,
+  type CalendarDate,
+} from "./age.js";
 
 /**
  * Auth API contract (issue #1). Used by the API to validate requests and build
@@ -24,11 +30,22 @@ export const STAFF_ROLES: readonly UserRole[] = ["receptionist", "club_manager",
  *
  * - `pending_verification`: signed up, email not verified yet. Can log in but
  *   is not fully active.
- * - `active`: email verified; full access.
+ * - `pending_consent` (#3): email verified, but the member is under 18 and a
+ *   parent or guardian has not given consent yet. Can log in but is not fully
+ *   active. See docs/api/consent.md.
+ * - `active`: email verified (and guardian consent given, for under-18s); full access.
+ *
+ * Only `active` is fully active: use `isAccountFullyActive` (and, in the API,
+ * `requireActiveAccount`) rather than comparing statuses by hand.
  */
-export const ACCOUNT_STATUSES = ["pending_verification", "active"] as const;
+export const ACCOUNT_STATUSES = ["pending_verification", "pending_consent", "active"] as const;
 export const accountStatusSchema = z.enum(ACCOUNT_STATUSES);
 export type AccountStatus = z.infer<typeof accountStatusSchema>;
+
+/** The one check for "can use member features" (booking, earning points, ...). */
+export function isAccountFullyActive(status: AccountStatus): boolean {
+  return status === "active";
+}
 
 // ---------------------------------------------------------------------------
 // Field rules
@@ -78,12 +95,70 @@ const opaqueTokenSchema = z
 // Requests
 // ---------------------------------------------------------------------------
 
-/** POST /auth/signup */
-export const signUpRequestSchema = z.object({
-  email: emailSchema,
-  password: newPasswordSchema,
-});
+/**
+ * Date of birth as `YYYY-MM-DD`: a real calendar date (no 2025-02-29 or
+ * 2025-13-01), not before 1900-01-01. "Not in the future" depends on today,
+ * so it is checked by `signUpRequestSchemaOn`.
+ */
+export const dateOfBirthSchema = z
+  .string({ error: "Enter your date of birth" })
+  .trim()
+  .min(1, { error: "Enter your date of birth" })
+  .refine((value) => isValidCalendarDate(value), {
+    error: "Enter a real date of birth (YYYY-MM-DD)",
+  })
+  .refine((value) => value >= EARLIEST_DATE_OF_BIRTH, {
+    error: "Check the year of your date of birth",
+  });
+
+const GUARDIAN_SAME_AS_MEMBER = "Your parent or guardian's email must be different from yours";
+
+/**
+ * POST /auth/signup, the shape only. Every member gives a date of birth
+ * (#3). `guardianEmail` is the parent or guardian to ask for consent; it is
+ * required for under-18s (see `signUpRequestSchemaOn`) and ignored for adults.
+ */
+export const signUpRequestSchema = z
+  .object({
+    email: emailSchema,
+    password: newPasswordSchema,
+    dateOfBirth: dateOfBirthSchema,
+    guardianEmail: emailSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.guardianEmail !== undefined && value.guardianEmail === value.email) {
+      ctx.addIssue({ code: "custom", path: ["guardianEmail"], message: GUARDIAN_SAME_AS_MEMBER });
+    }
+  });
 export type SignUpRequest = z.infer<typeof signUpRequestSchema>;
+
+/**
+ * POST /auth/signup with the rules that depend on today's date (`YYYY-MM-DD`):
+ * the date of birth is not in the future, and under-18s must give a
+ * `guardianEmail`. The API validates with today's date in UTC; the web app
+ * with the device's date.
+ */
+export function signUpRequestSchemaOn(today: CalendarDate) {
+  return signUpRequestSchema.superRefine((value, ctx) => {
+    // Zod runs this even when a field failed; an invalid date already has its error.
+    if (!isValidCalendarDate(value.dateOfBirth)) return;
+    if (value.dateOfBirth > today) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["dateOfBirth"],
+        message: "Your date of birth can't be in the future",
+      });
+      return;
+    }
+    if (needsGuardianConsent(value.dateOfBirth, today) && value.guardianEmail === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["guardianEmail"],
+        message: "Members under 18 need a parent or guardian's email",
+      });
+    }
+  });
+}
 
 /** POST /auth/login */
 export const logInRequestSchema = z.object({
@@ -160,7 +235,7 @@ export type MessageResponse = z.infer<typeof messageResponseSchema>;
 /** 200 from POST /auth/verify-email. */
 export const verifyEmailResponseSchema = z.object({
   message: z.string(),
-  /** The account's status after verification (`active` today). */
+  /** The account's status after verification: `active`, or `pending_consent` for an under-18 (#3). */
   accountStatus: accountStatusSchema,
 });
 export type VerifyEmailResponse = z.infer<typeof verifyEmailResponseSchema>;
@@ -178,8 +253,14 @@ export const API_ERROR_CODES = [
   "unauthorized",
   /** 401 from refresh: unknown, expired, reused or revoked refresh token. */
   "invalid_refresh_token",
-  /** 400 from verify-email / password-reset confirm: unknown, used or expired link token. */
+  /** 400 from verify-email / password-reset confirm / guardian consent: unknown, used or expired link token. */
   "invalid_token",
+  /** 403: the feature needs a fully active account (`status: "active"`); see #3. */
+  "account_not_active",
+  /** 409 from the consent request endpoint: this account does not need guardian consent. */
+  "consent_not_required",
+  /** 409 from the consent request endpoint: this guardian already declined; nominate another. */
+  "guardian_declined",
   /** 429: too many attempts; see the `Retry-After` header (seconds). */
   "rate_limited",
   /** 404: unknown route. */

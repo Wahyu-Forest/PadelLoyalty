@@ -29,6 +29,56 @@ describe("AuthApi", () => {
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer pla_x");
   });
 
+  it("calls the consent endpoints (#3) with the right method, auth and body", async () => {
+    const status = {
+      state: "pending",
+      guardianEmail: "mum@example.com",
+      requestedAt: "2026-11-24T10:00:00.000Z",
+      expiresAt: "2026-12-01T10:00:00.000Z",
+      decidedAt: null,
+    };
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/review")) {
+        return json({
+          memberEmail: "kid@example.com",
+          memberDateOfBirth: "2012-05-01",
+          guardianEmail: "mum@example.com",
+          expiresAt: "2026-12-01T10:00:00.000Z",
+        });
+      }
+      if (url.endsWith("/decision")) return json({ message: "Thanks", decision: "confirm" });
+      return json(status);
+    });
+    const api = new AuthApi(API, fetchImpl as unknown as typeof fetch);
+
+    expect((await api.consentStatus("pla_x")).ok).toBe(true);
+    expect((await api.requestConsent("pla_x", { guardianEmail: "dad@example.com" })).ok).toBe(true);
+    expect((await api.reviewConsent("plc_1")).ok).toBe(true);
+    expect(
+      (await api.decideConsent({ token: "plc_1", decision: "confirm", isParentOrGuardian: true }))
+        .ok,
+    ).toBe(true);
+
+    const calls = fetchImpl.mock.calls as unknown as [string, RequestInit][];
+    const summary = calls.map(([url, init]) => [
+      url.replace(API, ""),
+      init.method,
+      (init.headers as Record<string, string>).authorization ?? null,
+      init.body ? JSON.parse(String(init.body)) : null,
+    ]);
+    expect(summary).toEqual([
+      ["/auth/consent", "GET", "Bearer pla_x", null],
+      ["/auth/consent/request", "POST", "Bearer pla_x", { guardianEmail: "dad@example.com" }],
+      ["/auth/consent/review", "POST", null, { token: "plc_1" }],
+      [
+        "/auth/consent/decision",
+        "POST",
+        null,
+        { token: "plc_1", decision: "confirm", isParentOrGuardian: true },
+      ],
+    ]);
+  });
+
   it("returns the API error with field errors and Retry-After", async () => {
     const fetchImpl = async () =>
       json({ error: { code: "rate_limited", message: "Too many" } }, 429, { "retry-after": "90" });
@@ -56,8 +106,13 @@ describe("AuthApi", () => {
       throw new TypeError("Failed to fetch");
     };
     expect(
-      (await new AuthApi(API, failing as typeof fetch).signUp({ email: "a@b.co", password: "x" }))
-        .ok,
+      (
+        await new AuthApi(API, failing as typeof fetch).signUp({
+          email: "a@b.co",
+          password: "x",
+          dateOfBirth: "1990-01-01",
+        })
+      ).ok,
     ).toBe(false);
     const noApi = vi.fn();
     const result = await new AuthApi(null, noApi as typeof fetch).resendVerification("a@b.co");

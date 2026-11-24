@@ -67,6 +67,10 @@ async function logInVia(page: Page, email: string, password = PASSWORD) {
   await logInButton(page).click();
   await expect(logOutControl(page)).toBeVisible();
 }
+/** #3: sign-up asks everyone for a date of birth; an adult's needs no guardian. */
+async function adultDateOfBirth(page: Page) {
+  await page.getByLabel("Date of birth").fill("1990-04-15");
+}
 /** Follows an emailed link the way the browser would (path is relative to the base path). */
 async function followEmailLink(page: Page, path: "verify-email" | "reset-password", token: string) {
   await page.goto(`${path}/#token=${encodeURIComponent(token)}`);
@@ -91,6 +95,7 @@ test.describe("sign up (AC1, AC2)", () => {
     await openSignUp(page);
     await emailField(page).fill(`  ${email.toUpperCase()} `);
     await passwordField(page).fill(PASSWORD);
+    await adultDateOfBirth(page); // #3: sign-up needs a date of birth
     await signUpButton(page).click();
 
     await expect(page.getByText(/check your (email|inbox)/i).first()).toBeVisible();
@@ -135,6 +140,7 @@ test.describe("sign up (AC1, AC2)", () => {
     await openSignUp(page);
     await emailField(page).fill(email);
     await passwordField(page).fill("some other password");
+    await adultDateOfBirth(page); // #3: sign-up needs a date of birth
     await signUpButton(page).click();
 
     await expect(page.getByText(/check your (email|inbox)/i).first()).toBeVisible();
@@ -146,6 +152,7 @@ test.describe("sign up (AC1, AC2)", () => {
     await openSignUp(page);
     await emailField(page).fill(uniqueEmail());
     await passwordField(page).fill(PASSWORD);
+    await adultDateOfBirth(page); // #3: sign-up needs a date of birth
     await signUpButton(page).dblclick();
     await expect(page.getByText(/check your (email|inbox)/i).first()).toBeVisible();
     expect(api.requests.filter((r) => r.path === "/auth/signup")).toHaveLength(1);
