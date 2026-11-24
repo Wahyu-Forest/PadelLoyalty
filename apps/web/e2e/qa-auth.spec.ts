@@ -13,6 +13,8 @@ import { FakeAuthApi } from "./support/qa-fake-auth-api";
 
 const PASSWORD = "correct horse battery";
 const NEW_PASSWORD = "brand new password 42";
+/** Sign-up needs a date of birth since #3; these #1 flows use an adult. */
+const ADULT_DOB = "1990-06-15";
 
 let api: FakeAuthApi;
 
@@ -25,6 +27,7 @@ const uniqueEmail = () => `qa-${Date.now()}-${Math.random().toString(36).slice(2
 
 // Accessible names, loose enough not to depend on exact copy.
 const emailField = (page: Page) => page.getByLabel(/^email/i);
+const dateOfBirthField = (page: Page) => page.getByLabel(/date of birth|birthday/i).first();
 const passwordField = (page: Page) => page.getByLabel(/^(new )?password$/i).first();
 const signUpButton = (page: Page) =>
   page.getByRole("button", { name: /sign up|create (an )?account|register/i });
@@ -91,6 +94,7 @@ test.describe("sign up (AC1, AC2)", () => {
     await openSignUp(page);
     await emailField(page).fill(`  ${email.toUpperCase()} `);
     await passwordField(page).fill(PASSWORD);
+    await dateOfBirthField(page).fill(ADULT_DOB);
     await signUpButton(page).click();
 
     await expect(page.getByText(/check your (email|inbox)/i).first()).toBeVisible();
@@ -111,6 +115,7 @@ test.describe("sign up (AC1, AC2)", () => {
     await openSignUp(page);
     await emailField(page).fill(uniqueEmail());
     await passwordField(page).fill("short");
+    await dateOfBirthField(page).fill(ADULT_DOB);
     await signUpButton(page).click();
 
     await expect(page.getByText(/at least 10 characters/i).first()).toBeVisible();
@@ -121,6 +126,7 @@ test.describe("sign up (AC1, AC2)", () => {
     await openSignUp(page);
     await emailField(page).fill("not-an-email");
     await passwordField(page).fill(PASSWORD);
+    await dateOfBirthField(page).fill(ADULT_DOB);
     await signUpButton(page).click();
 
     await expect(page.getByText(/valid email/i).first()).toBeVisible();
@@ -135,6 +141,7 @@ test.describe("sign up (AC1, AC2)", () => {
     await openSignUp(page);
     await emailField(page).fill(email);
     await passwordField(page).fill("some other password");
+    await dateOfBirthField(page).fill(ADULT_DOB);
     await signUpButton(page).click();
 
     await expect(page.getByText(/check your (email|inbox)/i).first()).toBeVisible();
@@ -146,6 +153,7 @@ test.describe("sign up (AC1, AC2)", () => {
     await openSignUp(page);
     await emailField(page).fill(uniqueEmail());
     await passwordField(page).fill(PASSWORD);
+    await dateOfBirthField(page).fill(ADULT_DOB);
     await signUpButton(page).dblclick();
     await expect(page.getByText(/check your (email|inbox)/i).first()).toBeVisible();
     expect(api.requests.filter((r) => r.path === "/auth/signup")).toHaveLength(1);

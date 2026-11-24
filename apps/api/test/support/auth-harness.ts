@@ -30,6 +30,11 @@ import { maskPassword, requireTestDatabaseUrl } from "./test-env.js";
 
 export const APP_URL = "http://app.test";
 export const PASSWORD = "correct horse battery";
+/**
+ * Sign-up needs a date of birth since #3. Adults get this one (well over 18
+ * for any test clock), so the #1 tests keep exercising the adult flow.
+ */
+export const ADULT_DOB = "1990-06-15";
 
 export type App = Awaited<ReturnType<typeof buildApp>>;
 type AuthOptions = NonNullable<Parameters<typeof buildApp>[0]["auth"]>;
@@ -53,6 +58,10 @@ export class TestClock {
   now = (): Date => new Date(this.current.getTime());
   advance(ms: number): void {
     this.current = new Date(this.current.getTime() + ms);
+  }
+  /** Jumps to an exact instant, e.g. `set("2026-11-24T12:00:00Z")` for date-boundary tests. */
+  set(instant: Date | string): void {
+    this.current = new Date(instant);
   }
 }
 
@@ -174,7 +183,12 @@ export async function signUp(
   password = PASSWORD,
   options?: CallOptions,
 ) {
-  const response = await post(h.app, "/auth/signup", { email, password }, options);
+  const response = await post(
+    h.app,
+    "/auth/signup",
+    { email, password, dateOfBirth: ADULT_DOB },
+    options,
+  );
   expect(response.statusCode, response.body).toBe(202);
   return response;
 }
