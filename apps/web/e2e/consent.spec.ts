@@ -95,7 +95,9 @@ test("an under-18 signs up, verifies, waits for consent; the guardian confirms; 
   await page.goto("./");
   await expect(page.getByTestId("account-email")).toHaveText(KID);
   await expect(page.getByTestId("consent-pending")).toHaveCount(0);
-  await expect(page.getByTestId("account")).toContainText(`Your ${POINTS_NAME} and bookings`);
+  // Active now: the home shows the points balance (#6).
+  await expect(page.getByTestId("points-balance")).toContainText(`Your ${POINTS_NAME}`);
+  await expect(page.getByTestId("points-balance-value")).toHaveText("0");
 });
 
 test("asks for a guardian only under 18, and not the member's own email", async ({ page }) => {

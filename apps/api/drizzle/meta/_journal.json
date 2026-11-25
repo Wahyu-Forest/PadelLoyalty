@@ -29,6 +29,13 @@
       "when": 1795501721361,
       "tag": "0003_guardian_consent",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795510756162,
+      "tag": "0004_points_ledger",
+      "breakpoints": true
     }
   ]
 }

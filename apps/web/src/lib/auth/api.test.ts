@@ -20,6 +20,30 @@ describe("AuthApi", () => {
     expect(init.credentials).toBeUndefined(); // tokens, not cookies
   });
 
+  it("gets the points balance (#6) with the bearer token and validates it", async () => {
+    const body = { balance: 1250, asOf: "2026-11-24T10:00:00.000Z" };
+    const fetchImpl = vi.fn(async () => json(body));
+    const result = await new AuthApi(API, fetchImpl as typeof fetch).pointsBalance("pla_x");
+
+    expect(result).toEqual({ ok: true, data: body });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${API}/points/balance`);
+    expect(init.method).toBe("GET");
+    expect(init.body).toBeUndefined();
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer pla_x");
+
+    const bad = await new AuthApi(API, (async () =>
+      json({ balance: "lots", asOf: body.asOf })) as typeof fetch).pointsBalance("pla_x");
+    expect(bad).toMatchObject({ ok: false, error: { code: "invalid_response" } });
+
+    const pending = await new AuthApi(API, (async () =>
+      json(
+        { error: { code: "account_not_active", message: "Verify your email." } },
+        403,
+      )) as typeof fetch).pointsBalance("pla_x");
+    expect(pending).toMatchObject({ ok: false, error: { code: "account_not_active" } });
+  });
+
   it("sends the bearer token for /auth/me", async () => {
     const fetchImpl = vi.fn(async () => json({ user: sessionBody(1).user }));
     await new AuthApi(API, fetchImpl as typeof fetch).me("pla_x");

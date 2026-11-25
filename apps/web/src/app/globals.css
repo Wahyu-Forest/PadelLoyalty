@@ -315,3 +315,58 @@ button.link {
   gap: 0.5rem;
   justify-items: start;
 }
+
+/* Points balance (#6) */
+
+.points .eyebrow {
+  margin: 0;
+}
+
+.points-value {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  color: var(--brand);
+  overflow-wrap: anywhere;
+}
+
+.points-value [data-testid="points-balance-value"] {
+  font-size: clamp(2.25rem, 11vw, 3rem);
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.points-unit {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.placeholder-value {
+  min-height: 3.3rem;
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, #eef1ef, #f7f8f7, #eef1ef);
+  background-size: 200% 100%;
+  animation: points-shimmer 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .placeholder-value {
+    animation: none;
+  }
+}
+
+@keyframes points-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.points .muted {
+  margin: 0;
+}

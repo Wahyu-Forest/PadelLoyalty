@@ -41,8 +41,21 @@ export async function connectTestDatabase(): Promise<DatabaseConnection> {
   return connection;
 }
 
+/**
+ * Empties the account tables, and with them (cascade) the tables that reference
+ * users. The points ledger refuses TRUNCATE (append-only, #6), so its guard
+ * trigger is switched off for this one transaction; only the table owner can.
+ */
 export async function resetAuthTables(connection: DatabaseConnection): Promise<void> {
-  await connection.db.execute(sql`truncate table email_tokens, sessions, users cascade`);
+  await connection.db.transaction(async (tx) => {
+    await tx.execute(
+      sql`alter table points_ledger_entries disable trigger points_ledger_entries_no_truncate`,
+    );
+    await tx.execute(sql`truncate table email_tokens, sessions, users cascade`);
+    await tx.execute(
+      sql`alter table points_ledger_entries enable trigger points_ledger_entries_no_truncate`,
+    );
+  });
 }
 
 /** A controllable clock: starts at the real time, moves only when advanced. */

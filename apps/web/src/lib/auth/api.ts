@@ -6,6 +6,7 @@ import {
   consentStatusResponseSchema,
   meResponseSchema,
   messageResponseSchema,
+  pointsBalanceResponseSchema,
   verifyEmailResponseSchema,
   type ApiErrorCode,
   type AuthSessionResponse,
@@ -18,6 +19,7 @@ import {
   type MeResponse,
   type MessageResponse,
   type PasswordResetConfirmRequest,
+  type PointsBalanceResponse,
   type SignUpRequest,
   type VerifyEmailResponse,
 } from "@padelloyalty/shared";
@@ -42,7 +44,10 @@ const NETWORK_ERROR: ClientError = {
   message: "Can't reach Soul Padel right now. Check your connection and try again.",
 };
 
-/** Calls the auth endpoints described in docs/api/auth.md and docs/api/consent.md. */
+/**
+ * Calls the API endpoints described in docs/api/auth.md, docs/api/consent.md
+ * and docs/api/points.md.
+ */
 export class AuthApi {
   constructor(
     private readonly apiUrl: string | null,
@@ -111,6 +116,14 @@ export class AuthApi {
   /** The guardian's decision; uses up the link (#3). */
   decideConsent(body: ConsentDecisionRequest) {
     return this.request("/auth/consent/decision", consentDecisionResponseSchema, { body });
+  }
+
+  /** The logged-in member's points balance (#6). Active accounts only. */
+  pointsBalance(accessToken: string) {
+    return this.request("/points/balance", pointsBalanceResponseSchema, {
+      method: "GET",
+      accessToken,
+    });
   }
 
   private async request<S extends z.ZodType | null>(
@@ -212,5 +225,6 @@ export type {
   ConsentStatusResponse,
   MeResponse,
   MessageResponse,
+  PointsBalanceResponse,
   VerifyEmailResponse,
 };
